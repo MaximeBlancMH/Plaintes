@@ -1,0 +1,87 @@
+@model Plaintes.Models.Plainte
+
+@{
+    ViewData["Title"] = "Create";
+}
+
+<h1>Create</h1>
+
+<h4>Plainte</h4>
+<hr />
+<div class="row">
+    <div class="col-md-4">
+        <form asp-action="Create">
+            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+            <div class="form-group">
+                <label asp-for="Codeuser" class="control-label"></label>
+                <select asp-for="Codeuser" class ="form-control" asp-items="ViewBag.Codeuser"></select>
+            </div>
+            <div class="form-group">
+                <label asp-for="Codepartiecommune" class="control-label"></label>
+                <select asp-for="Codepartiecommune" class ="form-control" asp-items="ViewBag.Codepartiecommune"></select>
+            </div>
+            <div class="form-group">
+                <label asp-for="Codecat" class="control-label"></label>
+                <select asp-for="Codecat" class ="form-control" asp-items="ViewBag.Codecat"></select>
+            </div>
+            <div class="form-group">
+                <label asp-for="Numcite" class="control-label"></label>
+                <select asp-for="Numcite" class ="form-control" asp-items="ViewBag.Numcite"></select>
+            </div>
+            <div class="form-group">
+                <label asp-for="Datedeb" class="control-label"></label>
+                <input asp-for="Datedeb" class="form-control" />
+                <span asp-validation-for="Datedeb" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <label asp-for="Datefin" class="control-label"></label>
+                <input asp-for="Datefin" class="form-control" />
+                <span asp-validation-for="Datefin" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <label asp-for="Numreclamation" class="control-label"></label>
+                <input asp-for="Numreclamation" class="form-control" />
+                <span asp-validation-for="Numreclamation" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <label asp-for="Commentaire" class="control-label"></label>
+                <input asp-for="Commentaire" class="form-control" />
+                <span asp-validation-for="Commentaire" class="text-danger"></span>
+            </div>
+            <div class="form-group form-check">
+                <label class="form-check-label">
+                    <input class="form-check-input" asp-for="Suppr" /> @Html.DisplayNameFor(model => model.Suppr)
+                </label>
+            </div>
+            <div class="form-group">
+                <label asp-for="Numentree" class="control-label"></label>
+                <input asp-for="Numentree" class="form-control" />
+                <span asp-validation-for="Numentree" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <label asp-for="Coderue" class="control-label"></label>
+                <select asp-for="Coderue" class ="form-control" asp-items="ViewBag.Coderue"></select>
+            </div>
+            <div class="form-group">
+                <label asp-for="Codetat" class="control-label"></label>
+                <select asp-for="Codetat" class ="form-control" asp-items="ViewBag.Codetat"></select>
+            </div>
+            <div class="form-group">
+                <label asp-for="Numrue" class="control-label"></label>
+                <input asp-for="Numrue" class="form-control" />
+                <span asp-validation-for="Numrue" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <input type="submit" value="Create" class="btn btn-primary" />
+            </div>
+        </form>
+    </div>
+</div>
+
+<div>
+    <a asp-action="Index">Back to List</a>
+</div>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+}

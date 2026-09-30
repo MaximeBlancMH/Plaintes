@@ -1,0 +1,107 @@
+@model IEnumerable<Plaintes.Models.Plainte>
+
+@{
+    ViewData["Title"] = "Index";
+}
+
+<h1>Index</h1>
+
+<p>
+    <a asp-action="Create">Create New</a>
+</p>
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+                @Html.DisplayNameFor(model => model.Datedeb)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Datefin)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Numreclamation)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Commentaire)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Suppr)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Numentree)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Numrue)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.CodecatNavigation)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.CodepartiecommuneNavigation)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.CoderueNavigation)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.CodetatNavigation)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.CodeuserNavigation)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.NumciteNavigation)
+            </th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+@foreach (var item in Model.OrderByDescending(m => m.Datedeb)) {
+        <tr>
+            <td>
+                @Html.DisplayFor(modelItem => item.Datedeb)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.Datefin)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.Numreclamation)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.Commentaire)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.Suppr)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.Numentree)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.Numrue)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.CodecatNavigation.Codecat)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.CodepartiecommuneNavigation.Codepartiecommune)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.CoderueNavigation.Coderue)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.CodetatNavigation.Codetat)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.CodeuserNavigation.Codeuser)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.NumciteNavigation.Numcite)
+            </td>
+            <td>
+                <a asp-action="Edit" asp-route-id="@item.Numplainte">Edit</a> |
+                <a asp-action="Details" asp-route-id="@item.Numplainte">Details</a> |
+                <a asp-action="Delete" asp-route-id="@item.Numplainte">Delete</a>
+            </td>
+        </tr>
+}
+    </tbody>
+</table>
