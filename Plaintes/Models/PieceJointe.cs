@@ -5,19 +5,19 @@ namespace Plaintes.Models;
 
 public partial class PieceJointe
 {
-    public int Numpiece { get; set; }
+    public int NumPiece { get; set; }
 
-    public int Numplainte { get; set; }
+    public int NumPlainte { get; set; }
 
-    public string? Libpiece { get; set; }
+    public string? LibPiece { get; set; }
 
     public byte[]? Fichier { get; set; }
 
-    public string Typepiece { get; set; } = null!;
+    public string TypePiece { get; set; } = null!;
 
-    public string Taillepiece { get; set; } = null!;
+    public string TaillePiece { get; set; } = null!;
 
-    public bool Supprpj { get; set; }
+    public bool SupprPj { get; set; }
 
-    public virtual Plainte NumplainteNavigation { get; set; } = null!;
+    public virtual Plainte NumPlainteNavigation { get; set; } = null!;
 }

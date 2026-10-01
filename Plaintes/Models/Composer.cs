@@ -5,17 +5,17 @@ namespace Plaintes.Models;
 
 public partial class Composer
 {
-    public int Numdetail { get; set; }
+    public int NumDetail { get; set; }
 
-    public string Codenuisance { get; set; } = null!;
+    public string CodeNuisance { get; set; } = null!;
 
-    public int Numplainte { get; set; }
+    public int NumPlainte { get; set; }
 
     public int? Cout { get; set; }
 
-    public bool Supprdet { get; set; }
+    public bool SupprDet { get; set; }
 
-    public virtual Nuisance CodenuisanceNavigation { get; set; } = null!;
+    public virtual Nuisance CodeNuisanceNavigation { get; set; } = null!;
 
-    public virtual Plainte NumplainteNavigation { get; set; } = null!;
+    public virtual Plainte NumPlainteNavigation { get; set; } = null!;
 }

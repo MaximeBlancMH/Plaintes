@@ -5,19 +5,19 @@ namespace Plaintes.Models;
 
 public partial class Batiment
 {
-    public int Idbat { get; set; }
+    public int IdBat { get; set; }
 
-    public string Numbat { get; set; } = null!;
+    public string NumBat { get; set; } = null!;
 
-    public int Numcite { get; set; }
+    public int NumCite { get; set; }
 
-    public string? Libbat { get; set; }
+    public string? LibBat { get; set; }
 
-    public int Idtranche { get; set; }
+    public int IdTranche { get; set; }
 
     public virtual ICollection<Entree> Entrees { get; set; } = new List<Entree>();
 
-    public virtual Tranche IdtrancheNavigation { get; set; } = null!;
+    public virtual Tranche IdTrancheNavigation { get; set; } = null!;
 
-    public virtual Cite NumciteNavigation { get; set; } = null!;
+    public virtual Cite NumCiteNavigation { get; set; } = null!;
 }

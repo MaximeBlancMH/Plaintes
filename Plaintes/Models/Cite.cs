@@ -5,9 +5,9 @@ namespace Plaintes.Models;
 
 public partial class Cite
 {
-    public int Numcite { get; set; }
+    public int NumCite { get; set; }
 
-    public string? Libcite { get; set; }
+    public string? LibCite { get; set; }
 
     public string? Secteur { get; set; }
 

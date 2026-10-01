@@ -5,15 +5,15 @@ namespace Plaintes.Models;
 
 public partial class SousCategorie
 {
-    public string Codesouscat { get; set; } = null!;
+    public string CodeSousCat { get; set; } = null!;
 
-    public string Codecat { get; set; } = null!;
+    public string CodeCat { get; set; } = null!;
 
-    public string? Libsouscat { get; set; }
+    public string? LibSousCat { get; set; }
 
-    public bool Supprsouscat { get; set; }
+    public bool SupprSousCat { get; set; }
 
-    public virtual Categorie CodecatNavigation { get; set; } = null!;
+    public virtual Categorie CodeCatNavigation { get; set; } = null!;
 
     public virtual ICollection<Nuisance> Nuisances { get; set; } = new List<Nuisance>();
 }

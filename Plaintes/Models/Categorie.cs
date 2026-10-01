@@ -5,11 +5,11 @@ namespace Plaintes.Models;
 
 public partial class Categorie
 {
-    public string Codecat { get; set; } = null!;
+    public string CodeCat { get; set; } = null!;
 
-    public string? Libcat { get; set; }
+    public string? LibCat { get; set; }
 
-    public bool Supprcat { get; set; }
+    public bool SupprCat { get; set; }
 
     public virtual ICollection<Plainte> Plaintes { get; set; } = new List<Plainte>();
 

@@ -5,17 +5,15 @@ namespace Plaintes.Models;
 
 public partial class Utilisateur
 {
-    public string Codeuser { get; set; } = null!;
+    public int IdUser { get; set; }
 
-    public string? Nomuser { get; set; }
-
-    public string? Mdpuser { get; set; }
+    public string? NomUser { get; set; }
 
     public string? Access { get; set; }
 
-    public bool Actif { get; set; }
+    public DateOnly? DateFinu { get; set; }
 
-    public DateOnly? Datefinu { get; set; }
+    public string? UserEmail { get; set; }
 
     public virtual ICollection<Plainte> Plaintes { get; set; } = new List<Plainte>();
 }

@@ -7,7 +7,7 @@ public partial class Dico
 {
     public int Id { get; set; }
 
-    public string Nomtable { get; set; } = null!;
+    public string NomTable { get; set; } = null!;
 
     public string Champs { get; set; } = null!;
 

@@ -5,15 +5,15 @@ namespace Plaintes.Models;
 
 public partial class Tranche
 {
-    public string Codetranche { get; set; } = null!;
+    public string CodeTranche { get; set; } = null!;
 
-    public int Numcite { get; set; }
+    public int NumCite { get; set; }
 
-    public string? Libtranche { get; set; }
+    public string? LibTranche { get; set; }
 
-    public int Idtranche { get; set; }
+    public int IdTranche { get; set; }
 
     public virtual ICollection<Batiment> Batiments { get; set; } = new List<Batiment>();
 
-    public virtual Cite NumciteNavigation { get; set; } = null!;
+    public virtual Cite NumCiteNavigation { get; set; } = null!;
 }

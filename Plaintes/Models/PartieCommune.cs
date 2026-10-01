@@ -5,11 +5,11 @@ namespace Plaintes.Models;
 
 public partial class PartieCommune
 {
-    public string Codepartiecommune { get; set; } = null!;
+    public string CodePartieCommune { get; set; } = null!;
 
-    public string? Libpartiecommune { get; set; }
+    public string? LibPartieCommune { get; set; }
 
-    public bool Supprpc { get; set; }
+    public bool SupprPc { get; set; }
 
     public virtual ICollection<Plainte> Plaintes { get; set; } = new List<Plainte>();
 }

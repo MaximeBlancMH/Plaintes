@@ -5,47 +5,66 @@ namespace Plaintes.Models;
 
 public partial class Plainte
 {
-    public int Numplainte { get; set; }
+    public int NumPlainte { get; set; }
 
-    public string Codeuser { get; set; } = null!;
+    public int IdUser { get; set; }
 
-    public string Codepartiecommune { get; set; } = null!;
+    public string CodePartieCommune { get; set; } = null!;
 
-    public string Codecat { get; set; } = null!;
+    public string CodeCat { get; set; } = null!;
 
-    public int Numcite { get; set; }
+    public int NumCite { get; set; }
 
-    public DateOnly? Datedeb { get; set; }
+    public DateOnly? DateDeb { get; set; }
 
-    public DateOnly? Datefin { get; set; }
+    public DateOnly? DateFin { get; set; }
 
-    public string? Numreclamation { get; set; }
+    public string? NumReclamation { get; set; }
 
     public string? Commentaire { get; set; }
 
     public bool Suppr { get; set; }
 
-    public string Numentree { get; set; } = null!;
+    public string NumEntree { get; set; } = null!;
 
-    public int Coderue { get; set; }
+    public int CodeRue { get; set; }
 
-    public string Codetat { get; set; } = null!;
+    public string CodEtat { get; set; } = null!;
 
-    public string? Numrue { get; set; }
+    public string? NumRue { get; set; }
 
-    public virtual Categorie CodecatNavigation { get; set; } = null!;
+    public DateTime DateCreation { get; set; }
 
-    public virtual PartieCommune CodepartiecommuneNavigation { get; set; } = null!;
+    public DateTime DateModification { get; set; }
 
-    public virtual Rue CoderueNavigation { get; set; } = null!;
+    public virtual Categorie CodeCatNavigation { get; set; } = null!;
 
-    public virtual Etat CodetatNavigation { get; set; } = null!;
+    public virtual PartieCommune CodePartieCommuneNavigation { get; set; } = null!;
 
-    public virtual Utilisateur CodeuserNavigation { get; set; } = null!;
+    public virtual Rue CodeRueNavigation { get; set; } = null!;
+
+    public virtual Etat CodEtatNavigation { get; set; } = null!;
+
+    public virtual Utilisateur IdUserNavigation { get; set; } = null!;
 
     public virtual ICollection<Composer> Composers { get; set; } = new List<Composer>();
 
-    public virtual Cite NumciteNavigation { get; set; } = null!;
+    public virtual Cite NumCiteNavigation { get; set; } = null!;
 
     public virtual ICollection<PieceJointe> PieceJointes { get; set; } = new List<PieceJointe>();
+}
+
+public class PlainteFiltres
+{
+    public int? numPlainte { get; set; }
+    public string? cite { get; set; }
+    public string? rue { get; set; }
+    public string? ville { get; set; }
+    public string? entree { get; set; }
+    public string? reclamation { get; set; }
+    public string? categorie { get; set; }
+    public string? sousCategorie { get; set; }
+    public string? nuisance { get; set; }
+    public int? coutMin { get; set; }
+    public int? coutMax { get; set; }
 }

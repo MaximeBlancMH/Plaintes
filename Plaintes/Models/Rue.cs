@@ -5,9 +5,9 @@ namespace Plaintes.Models;
 
 public partial class Rue
 {
-    public int Coderue { get; set; }
+    public int CodeRue { get; set; }
 
-    public string? Librue { get; set; }
+    public string? LibRue { get; set; }
 
     public string? Cp { get; set; }
 
