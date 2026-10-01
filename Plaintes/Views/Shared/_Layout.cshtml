@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,29 +11,75 @@
 </head>
 <body>
     <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
+        @{
+            var isAuth = User.Identity?.IsAuthenticated ?? false;
+            var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
+            string Active(string c) => string.Equals(ctrl, c, StringComparison.OrdinalIgnoreCase) ? " active" : "";
+        }
+        <nav class="navbar navbar-expand-lg navbar-mh sticky-top" data-bs-theme="dark">
             <div class="container-fluid">
-                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index"><img src="~/Logo-MHabitat-2022.png" /></a>
-                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
+                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">
+                    <img src="~/Logo-MHabitat-2022.png" alt="Mâcon Habitat" />
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain"
+                        aria-controls="navMain" aria-expanded="false" aria-label="Afficher le menu">
                     <span class="navbar-toggler-icon"></span>
                 </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Plaintes" asp-action="Index">Plaintes</a>
-                        </li>
-                    </ul>
+                <div class="collapse navbar-collapse" id="navMain">
+                    @if (isAuth)
+                    {
+                        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                            <li class="nav-item">
+                                <a class="nav-link@(Active("Dossiers"))" href="/Dossiers">Dossiers</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link@(Active("Saisie"))" href="/Saisie">Saisir un dossier</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link@(Active("Compte"))" href="/Compte">Mon Compte</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link@(Active("Utilisateurs"))" href="/Utilisateurs">Gestion Utilisateurs</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link@(Active("Tables"))" href="/Tables">Gestion des tables</a>
+                            </li>
+                        </ul>
+                        <div class="navbar-user d-flex align-items-lg-center flex-column flex-lg-row gap-2 gap-lg-3 pt-2 pt-lg-0">
+                            <span class="navbar-text text-white fw-semibold">@User.Identity!.Name</span>
+                            <button type="button" class="btn btn-mh btn-sm" data-bs-toggle="modal" data-bs-target="#logoutModal">
+                                Déconnexion
+                            </button>
+                        </div>
+                    }
                 </div>
             </div>
         </nav>
     </header>
+
+    @if (isAuth)
+    {
+        <div class="modal fade" id="logoutModal" tabindex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header modal-header-mh">
+                        <h5 class="modal-title" id="logoutModalLabel">Déconnexion</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2"><strong>Attention :</strong> cette action vous déconnecte également de votre compte Microsoft.</p>
+                        <p class="mb-0 text-muted">Vous devrez vous authentifier de nouveau pour accéder à l'application.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                        <form asp-controller="Account" asp-action="Logout" method="post" class="m-0">
+                            <button type="submit" class="btn btn-mh">Se déconnecter</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
     <div class="container">
         <main role="main" class="pb-3">
             @RenderBody()

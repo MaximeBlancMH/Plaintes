@@ -1,0 +1,580 @@
+﻿@* ============================================================================
+   Page "Dossiers" : liste des plaintes sous forme de tableau.
+   - Les données viennent de HomeController.Dossiers(), qui envoie la liste des plaintes à cette vue.
+   - La pagination (10 / 25 / 50) est faite par le serveur : le contrôleur ne renvoie que les
+     dossiers de la page demandée, via les paramètres d'adresse "page" et "pageSize"
+     (ex. /Dossiers?page=2&pageSize=25). Changer de page recharge donc la page.
+   Ces commentaires Razor (entre arobase-étoile et étoile-arobase) ne sont jamais envoyés au navigateur.
+   ============================================================================ *@
+
+@* Type de données reçu du contrôleur : une page de plaintes (Models/PagedResult.cs).
+   Model.Plaintes = les plaintes de la page, Model.Page = n° de la page, Model.PageSize = lignes par page,
+   Model.TotalCount = nombre total de dossiers, Model.TotalPages = nombre de pages. *@
+@model Plaintes.Models.PagedResult<Plaintes.Models.Plainte>
+@* Accès à la base pour remplir les listes du panneau de filtres (catégories, sous-catégories, nuisances). *@
+@inject Plaintes.Data.AppDbContext Db
+@using Microsoft.EntityFrameworkCore
+@{
+    // ---------- Données du panneau de filtres ----------
+    const int coutMaxPossible = 5000;
+    var categories = await Db.Categories.AsNoTracking().Where(c => !c.SupprCat).OrderBy(c => c.LibCat).ToListAsync();
+    var sousCategories = await Db.SousCategories.AsNoTracking().Where(s => !s.SupprSousCat).OrderBy(s => s.LibSousCat).ToListAsync();
+    var nuisances = await Db.Nuisances.AsNoTracking().Where(n => !n.SupprNuisance).OrderBy(n => n.LibNuisance).ToListAsync();
+
+    // Valeurs actuellement choisies (lues dans l'adresse : /Dossiers?categorie=...&coutMin=...)
+    var q = Context.Request.Query;
+    string fNumPlainte = q["numPlainte"].ToString();
+    string fCite = q["cite"].ToString();
+    string fRue = q["rue"].ToString();
+    string fVille = q["ville"].ToString();
+    string fEntree = q["entree"].ToString();
+    string fReclamation = q["reclamation"].ToString();
+    string fCategorie = q["categorie"].ToString();
+    string fSousCategorie = q["sousCategorie"].ToString();
+    string fNuisance = q["nuisance"].ToString();
+    int fCoutMin = int.TryParse(q["coutMin"], out var cMin) ? Math.Clamp(cMin, 0, coutMaxPossible) : 0;
+    int fCoutMax = int.TryParse(q["coutMax"], out var cMax) ? Math.Clamp(cMax, 0, coutMaxPossible) : coutMaxPossible;
+    if (fCoutMin > fCoutMax) { (fCoutMin, fCoutMax) = (fCoutMax, fCoutMin); }
+    // Paramètres de filtre à conserver quand on change de page.
+    var filtresActifs = new Dictionary<string, string?>
+    {
+        ["numPlainte"] = string.IsNullOrWhiteSpace(fNumPlainte) ? null : fNumPlainte,
+        ["cite"] = string.IsNullOrWhiteSpace(fCite) ? null : fCite,
+        ["rue"] = string.IsNullOrWhiteSpace(fRue) ? null : fRue,
+        ["ville"] = string.IsNullOrWhiteSpace(fVille) ? null : fVille,
+        ["entree"] = string.IsNullOrWhiteSpace(fEntree) ? null : fEntree,
+        ["reclamation"] = string.IsNullOrWhiteSpace(fReclamation) ? null : fReclamation,
+        ["categorie"] = string.IsNullOrEmpty(fCategorie) ? null : fCategorie,
+        ["sousCategorie"] = string.IsNullOrEmpty(fSousCategorie) ? null : fSousCategorie,
+        ["nuisance"] = string.IsNullOrEmpty(fNuisance) ? null : fNuisance,
+        ["coutMin"] = fCoutMin > 0 ? fCoutMin.ToString() : null,
+        ["coutMax"] = fCoutMax < coutMaxPossible ? fCoutMax.ToString() : null
+    };
+    var filtreActif = filtresActifs.Values.Any(v => v != null);
+
+    // Titre de l'onglet du navigateur (utilisé par _Layout.cshtml via ViewData["Title"]).
+    ViewData["Title"] = "Dossiers";
+    // Les plaintes de la page courante.
+    var dossiers = Model.Plaintes;
+    // Taille de page : on se protège d'une valeur à 0 (division par zéro dans TotalPages).
+    var taillePage = Model.PageSize > 0 ? Model.PageSize : 10;
+    var total = Model.TotalCount;
+    var pages = Math.Max(1, Model.TotalPages);
+    var pageCourante = Math.Min(Math.Max(Model.Page, 1), pages);
+    // Numéros du premier et du dernier dossier affichés (ex. 11 et 20 pour la page 2 à 10 par page).
+    var premier = total == 0 ? 0 : (pageCourante - 1) * taillePage + 1;
+    var dernier = total == 0 ? 0 : premier + dossiers.Count - 1;
+    // Fabrique l'adresse d'une page, en gardant la taille de page choisie.
+    // Les filtres actifs sont conservés dans le lien.
+    string LienPage(int n)
+    {
+        var valeurs = new Microsoft.AspNetCore.Routing.RouteValueDictionary { ["page"] = n, ["pageSize"] = taillePage };
+        foreach (var f in filtresActifs.Where(f => f.Value != null)) valeurs[f.Key] = f.Value;
+        return Url.Action("Dossiers", "Home", valeurs)!;
+    }
+
+    // Gabarit de pagination, réutilisé en haut et en bas du tableau.
+    // "item" est la classe CSS de marge passée à l'appel (ex. @pagination("mb-3")).
+    // Chaque bouton est un vrai lien vers /Dossiers?page=N&pageSize=T.
+    Func<string, Microsoft.AspNetCore.Html.IHtmlContent> pagination = @<nav class="@item" aria-label="Pagination des dossiers">
+        <ul class="pagination pagination-mh justify-content-center flex-wrap mb-0">
+            @if (total > 0)
+            {
+                // On montre la page courante et une page de chaque côté
+                var debut = Math.Max(1, pageCourante - 1);
+                var fin = Math.Min(pages, pageCourante + 1);
+
+                @* Bouton "précédent" (grisé sur la première page) *@
+                <li class="page-item @(Model.HasPreviousPage ? "" : "disabled")">
+                    <a class="page-link" href="@LienPage(pageCourante - 1)" aria-label="Page précédente">«</a>
+                </li>
+
+                @* Si on est loin du début : lien vers la page 1 puis "…" *@
+                @if (debut > 1)
+                {
+                    <li class="page-item"><a class="page-link" href="@LienPage(1)">1</a></li>
+                    @if (debut > 2)
+                    {
+                        <li class="page-item disabled"><span class="page-link">…</span></li>
+                    }
+                }
+
+                @* Les pages autour de la page courante ; la courante est en vert et non cliquable *@
+                @for (var n = debut; n <= fin; n++)
+                {
+                    <li class="page-item @(n == pageCourante ? "active" : "")">
+                        <a class="page-link" href="@LienPage(n)" aria-current="@(n == pageCourante ? "page" : null)">@n</a>
+                    </li>
+                }
+
+                @* Si on est loin de la fin : "…" puis lien vers la dernière page *@
+                @if (fin < pages)
+                {
+                    @if (fin < pages - 1)
+                    {
+                        <li class="page-item disabled"><span class="page-link">…</span></li>
+                    }
+                    <li class="page-item"><a class="page-link" href="@LienPage(pages)">@pages</a></li>
+                }
+
+                @* Bouton "suivant" (grisé sur la dernière page) *@
+                <li class="page-item @(Model.HasNextPage ? "" : "disabled")">
+                    <a class="page-link" href="@LienPage(pageCourante + 1)" aria-label="Page suivante">»</a>
+                </li>
+            }
+        </ul>
+    </nav>;
+}
+
+@* ---------- Titre de la page + nombre total de dossiers ---------- *@
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0 titre-mh">Dossiers</h1>
+    @* Nombre total de dossiers (toutes pages confondues). Ajoute un "s" s'il y en a plusieurs *@
+    <span class="text-muted">@total dossier@(total > 1 ? "s" : "") au total</span>
+    @* Choix du nombre de lignes par page. Le script du bloc 2 recharge la page avec ?pageSize=N&page=1. *@
+    <div class="d-flex align-items-center gap-2">
+        <label for="pageSize" class="text-muted mb-0">Lignes par page</label>
+        <select id="pageSize" class="form-select form-select-sm w-auto">
+            @foreach (var taille in new[] { 10, 25, 50 })
+            {
+                <option value="@taille" selected="@(taille == taillePage)">@taille</option>
+            }
+        </select>
+    </div>
+</div>
+
+<style>
+    /* Curseur à deux poignées : deux <input type="range"> superposés ; seuls les ronds réagissent à la souris. */
+    .range-double { position: relative; height: 1.5rem; }
+    .range-double .piste, .range-double .piste-active { position: absolute; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; }
+    .range-double .piste { left: 0; right: 0; background: #dee2e6; }
+    .range-double .piste-active { background: var(--bs-success, #198754); }
+    .range-double input[type=range] { position: absolute; left: 0; width: 100%; top: 0; height: 100%; margin: 0;
+        background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+    .range-double input[type=range]::-webkit-slider-runnable-track { background: transparent; }
+    .range-double input[type=range]::-moz-range-track { background: transparent; }
+    .range-double input[type=range]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; appearance: none;
+        width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #fff; border: 2px solid var(--bs-success, #198754); cursor: grab; }
+    .range-double input[type=range]::-moz-range-thumb { pointer-events: auto; width: 1.1rem; height: 1.1rem; border-radius: 50%;
+        background: #fff; border: 2px solid var(--bs-success, #198754); cursor: grab; }
+    @@media (min-width: 992px) { .filtres-panneau { position: sticky; top: 1rem; } }
+</style>
+
+@* Deux colonnes : panneau de filtres à gauche (col-lg-3), tableau à droite (col-lg-9). *@
+<div class="row g-3 align-items-start">
+<aside class="col-12 col-lg-3">
+    <form method="get" action="@Url.Action("Dossiers", "Home")" class="card shadow-sm card-mh filtres-panneau" id="formFiltres">
+        <div class="card-body">
+            <h2 class="h5 titre-mh mb-3">Filtres</h2>
+
+            @* Garde la taille de page choisie quand on applique un filtre (envoyée seulement si différente de 10) *@
+            @if (taillePage != 10)
+            {
+                <input type="hidden" name="pageSize" value="@taillePage" />
+            }
+
+            @* Champs texte : recherche "contient" (sauf le n° de dossier, qui est un nombre) *@
+            <div class="mb-3">
+                <label for="numPlainte" class="form-label fw-semibold">N° de dossier</label>
+                <input type="number" min="1" class="form-control" id="numPlainte" name="numPlainte" value="@fNumPlainte" />
+            </div>
+            <div class="mb-3">
+                <label for="cite" class="form-label fw-semibold">Cité</label>
+                <input type="text" class="form-control" id="cite" name="cite" value="@fCite" />
+            </div>
+            <div class="mb-3">
+                <label for="rue" class="form-label fw-semibold">Rue</label>
+                <input type="text" class="form-control" id="rue" name="rue" value="@fRue" />
+            </div>
+            <div class="mb-3">
+                <label for="ville" class="form-label fw-semibold">Ville / Partie commune</label>
+                <input type="text" class="form-control" id="ville" name="ville" value="@fVille" />
+            </div>
+            <div class="mb-3">
+                <label for="entree" class="form-label fw-semibold">Entrée</label>
+                <input type="text" class="form-control" id="entree" name="entree" value="@fEntree" />
+            </div>
+            <div class="mb-3">
+                <label for="reclamation" class="form-label fw-semibold">N° de réclamation</label>
+                <input type="text" class="form-control" id="reclamation" name="reclamation" value="@fReclamation" />
+            </div>
+
+            @* Coût : deux poignées entre 0 et 5000 € *@
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Coût</label>
+                <div class="d-flex justify-content-between small mb-1">
+                    <span><span id="coutMinTxt">@fCoutMin</span> €</span>
+                    <span><span id="coutMaxTxt">@fCoutMax</span> €</span>
+                </div>
+                <div class="range-double">
+                    <div class="piste"></div>
+                    <div class="piste-active" id="pisteActive"></div>
+                    <input type="range" id="coutMin" name="coutMin" min="0" max="@coutMaxPossible" step="50" value="@fCoutMin" aria-label="Coût minimum" />
+                    <input type="range" id="coutMax" name="coutMax" min="0" max="@coutMaxPossible" step="50" value="@fCoutMax" aria-label="Coût maximum" />
+                </div>
+                <div class="d-flex justify-content-between text-muted small"><span>0 €</span><span>@coutMaxPossible €</span></div>
+            </div>
+
+            @* Catégorie : liste issue de la base *@
+            <div class="mb-3">
+                <label for="categorie" class="form-label fw-semibold">Catégorie</label>
+                <select class="form-select" id="categorie" name="categorie">
+                    <option value="">Toutes</option>
+                    @foreach (var c in categories)
+                    {
+                        <option value="@c.CodeCat" selected="@(c.CodeCat == fCategorie)">@c.LibCat</option>
+                    }
+                </select>
+            </div>
+
+            @* Sous-catégorie : data-cat permet au JavaScript de ne montrer que celles de la catégorie choisie *@
+            <div class="mb-3">
+                <label for="sousCategorie" class="form-label fw-semibold">Sous-catégorie</label>
+                <select class="form-select" id="sousCategorie" name="sousCategorie">
+                    <option value="">Toutes</option>
+                    @foreach (var s in sousCategories)
+                    {
+                        <option value="@s.CodeSousCat" data-cat="@s.CodeCat" selected="@(s.CodeSousCat == fSousCategorie)">@s.LibSousCat</option>
+                    }
+                </select>
+            </div>
+
+            @* Nuisance : data-souscat permet de ne montrer que celles de la sous-catégorie choisie *@
+            <div class="mb-3">
+                <label for="nuisance" class="form-label fw-semibold">Nuisance</label>
+                <select class="form-select" id="nuisance" name="nuisance">
+                    <option value="">Toutes</option>
+                    @foreach (var n in nuisances)
+                    {
+                        <option value="@n.CodeNuisance" data-souscat="@n.CodeSousCat" selected="@(n.CodeNuisance == fNuisance)">@n.LibNuisance</option>
+                    }
+                </select>
+            </div>
+
+            <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-mh">Appliquer</button>
+                @if (filtreActif)
+                {
+                    <a class="btn btn-outline-secondary" href="@Url.Action("Dossiers", "Home")">Réinitialiser</a>
+                }
+            </div>
+        </div>
+    </form>
+</aside>
+<div class="col-12 col-lg-9">
+
+@* Carte (cadre blanc) qui contient la barre d'options, le tableau et la pagination *@
+<div class="card shadow-sm card-mh">
+    <div class="card-body">
+        @* Pagination du haut*@
+        @pagination("mb-3")
+
+        @* ---------- Barre de défilement horizontale placée EN HAUT du tableau ---------- *@
+        <div class="scroll-haut" id="scrollHaut" aria-hidden="true"><div id="scrollHautInner"></div></div>
+
+        @* ---------- Tableau ---------- *@
+        <div class="table-responsive" id="scrollTable">
+            <table class="table table-mh table-bordered table-hover align-middle mb-0" id="tableDossiers">
+                @* ---------- En-têtes de colonnes ---------- *@
+                <thead>
+                    <tr>
+                        <th scope="col">N°</th>
+                        <th scope="col">Utilisateur</th>
+                        <th scope="col">Secteur</th>
+                        <th scope="col">Cité / Adresse</th>
+                        <th scope="col">Partie commune</th>
+                        <th scope="col">Période</th>
+                        <th scope="col">N° réclamation</th>
+                        <th scope="col">Commentaire</th>
+                        <th scope="col">Catégorie</th>
+                        <th scope="col">Détail(s)<br /><small class="fw-normal">Sous-catégorie / Nuisance / Coût</small></th>
+                        <th scope="col">Pièce(s) jointe(s)</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @* ---------- Une ligne du tableau par plainte ---------- *@
+                    @foreach (var p in dossiers)
+                    {
+                        var rue = p.CodeRueNavigation;
+                        // On récupère dans le même objet toutes les informations de la rue
+                        var ligneRue = string.Join(" ", new[] { p.NumRue, rue?.LibRue }
+                            .Where(s => !string.IsNullOrWhiteSpace(s)));
+                        // On récupère les détails
+                        var details = p.Composers.OrderBy(c => c.NumDetail).ToList();
+
+                        <tr class="dossier-row">
+                            <th scope="row">@p.NumPlainte</th>
+                            <td>@(p.IdUserNavigation?.NomUser)</td>
+                            <td>@(p.NumCiteNavigation?.Secteur)</td>
+                            <td class="cell-adresse">
+                                <div class="fw-semibold">@(p.NumCiteNavigation?.LibCite)</div>
+                                @if (ligneRue.Length > 0)
+                                {
+                                    <div>@ligneRue</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(p.NumEntree))
+                                {
+                                    <div class="text-muted small">Entrée @p.NumEntree</div>
+                                }
+                            </td>
+                            <td>@(p.CodePartieCommuneNavigation?.LibPartieCommune)</td>
+                            <td class="text-nowrap">
+                                <div><span class="text-muted small">Du</span> @(p.DateDeb?.ToString("dd/MM/yyyy"))</div>
+                                <div><span class="text-muted small">Au</span> @(p.DateFin?.ToString("dd/MM/yyyy") ?? "en cours")</div>
+                            </td>
+                            <td class="text-nowrap">@(p.NumReclamation)</td>
+                            <td class="cell-commentaire">
+                                @if (!string.IsNullOrWhiteSpace(p.Commentaire))
+                                {
+                                    <div class="commentaire-clamp" title="@p.Commentaire">@p.Commentaire</div>
+                                }
+                            </td>
+                            <td>@(p.CodeCatNavigation?.LibCat)</td>
+                            <td class="cell-details">
+                                @if (details.Count > 0)
+                                {
+                                    <ul class="list-unstyled mb-0">
+                                        @foreach (var d in details)
+                                        {
+                                            // On récupère la nuisance depuis le détail.
+                                            var nuis = d.CodeNuisanceNavigation;
+                                            <li>
+                                                @(nuis?.CodeSousCatNavigation?.LibSousCat)
+                                                <span class="text-muted">/</span>
+                                                @(nuis?.LibNuisance)
+                                                <span class="text-muted">/</span>
+                                                <span class="text-nowrap">@(d.Cout.HasValue ? d.Cout.Value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("fr-FR")) + " €" : "")</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </td>
+                            @* Colonne 11 : pièces jointes. Chaque nom est un lien qui ouvre le fichier
+                               dans un nouvel onglet, via l'action HomeController.PieceJointeFichier. *@
+                            <td class="cell-pj">
+                                @if (p.PieceJointes.Count > 0)
+                                {
+                                    <ul class="list-unstyled mb-0">
+                                        @foreach (var pj in p.PieceJointes.OrderBy(x => x.NumPiece))
+                                        {
+                                            <li>
+                                                @* Url.Action fabrique l'adresse du lien à partir du nom de l'action, du contrôleur et de l'id.
+                                                   rel="noopener" est une protection de sécurité pour les liens en nouvel onglet.
+                                                   title = infobulle avec le type et la taille du fichier.
+                                                   Texte du lien = nom du fichier, ou "Pièce N" si le nom est vide. *@
+                                                <a href="@Url.Action("PieceJointeFichier", "Home", new { id = pj.NumPiece })"
+                                                   target="_blank" rel="noopener"
+                                                   title="@pj.TypePiece – @pj.TaillePiece">@(string.IsNullOrWhiteSpace(pj.LibPiece) ? $"Pièce {pj.NumPiece}" : pj.LibPiece)</a>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </td>
+                            @* Colonne 12 : boutons d'action. Ils ne sont pas encore reliés à une page :
+                               "data-action" dit quelle action le bouton représente et "data-id" porte le n° de plainte,
+                               pour que le JavaScript (ou un futur lien) sache sur quel dossier agir.
+                               "data-resume" (bouton Supprimer) contient le nom de la cité, affiché dans le modal. *@
+                            <td class="cell-actions">
+                                <div class="d-flex flex-column gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-mh" data-action="modifier" data-id="@p.NumPlainte">Modifier</button>
+                                    <button type="button" class="btn btn-sm btn-outline-mh" data-action="telecharger" data-id="@p.NumPlainte">Télécharger</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-action="supprimer" data-id="@p.NumPlainte" data-resume="@(p.NumCiteNavigation?.LibCite ?? "")">Supprimer</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @* Ligne affichée uniquement quand la page ne contient aucun dossier. Sinon l'attribut "hidden" la masque.
+                       colspan="12" : la cellule occupe les 12 colonnes du tableau. *@
+                    <tr id="rowVide" @(dossiers.Count > 0 ? "hidden" : "")>
+                        <td colspan="12" class="text-center text-muted py-4">Aucun dossier à afficher.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        @* Pagination du bas (gabarit "pagination" défini en haut de la page) *@
+        @pagination("mt-3")
+    </div>
+</div>
+
+</div>@* fin colonne tableau *@
+</div>@* fin ligne filtres + tableau *@
+
+@* ============================================================================
+   Modal (fenêtre de confirmation) de suppression.
+   Il est caché par défaut ; le JavaScript l'ouvre quand on clique sur "Supprimer" dans une ligne.
+   ============================================================================ *@
+<div class="modal fade" id="supprimerModal" tabindex="-1" aria-labelledby="supprimerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header modal-header-danger">
+                <h5 class="modal-title" id="supprimerModalLabel">Supprimer le dossier</h5>
+                @* data-bs-dismiss="modal" : Bootstrap ferme le modal au clic, sans code supplémentaire *@
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            @* Le formulaire envoie un POST vers /Dossiers/Supprimer (action à créer dans le contrôleur) *@
+            <form method="post" action="@Url.Content("~/Dossiers/Supprimer")" class="m-0">
+                @* Jeton anti-falsification (CSRF) : le contrôleur pourra le vérifier avec [ValidateAntiForgeryToken] *@
+                @Html.AntiForgeryToken()
+                @* Champ caché rempli par le JavaScript avec le n° de la plainte à supprimer *@
+                <input type="hidden" name="numPlainte" id="supprimerNumPlainte" />
+                <div class="modal-body">
+                    @* Le <strong> est rempli par le JavaScript avec "n° 123 (nom de la cité)" *@
+                    <p class="mb-2">Voulez-vous vraiment supprimer le dossier <strong id="supprimerLibelle"></strong> ?</p>
+                    <p class="mb-0 text-muted">Cette action retire le dossier de la liste.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-danger">Supprimer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@* Cette section est insérée par _Layout.cshtml à la fin de la page (après jQuery et Bootstrap),
+   ce qui garantit que l'objet "bootstrap" existe quand le script s'exécute. *@
+@section Scripts {
+    <script>
+        // ====================================================================
+        // Bloc 1 : ouverture du modal de suppression
+        // Chaque bloc est entouré de (function () { ... })(); pour que ses variables
+        // restent privées et n'entrent pas en conflit avec celles des autres blocs.
+        // ====================================================================
+        (function () {
+            const supprimerModal = document.getElementById('supprimerModal');
+
+            // On écoute les clics sur tout le tableau (et pas sur chaque bouton) : ça marche aussi
+            // pour les lignes masquées/affichées par la pagination.
+            document.getElementById('tableDossiers').addEventListener('click', function (e) {
+                // closest() remonte depuis l'élément cliqué jusqu'à un bouton "supprimer" ;
+                // si on a cliqué ailleurs, il n'y en a pas et on sort de la fonction.
+                const btn = e.target.closest('[data-action="supprimer"]');
+                if (!btn) return;
+
+                // dataset lit les attributs data-xxx du bouton (data-id -> dataset.id, data-resume -> dataset.resume)
+                const cite = btn.dataset.resume;
+                // On remplit le champ caché du formulaire avec le n° de plainte...
+                document.getElementById('supprimerNumPlainte').value = btn.dataset.id;
+                // ...et le texte de confirmation, par exemple "n° 123 (Les Bruyères)".
+                document.getElementById('supprimerLibelle').textContent =
+                    'n° ' + btn.dataset.id + (cite ? ' (' + cite + ')' : '');
+                // On ouvre le modal avec l'API de Bootstrap.
+                bootstrap.Modal.getOrCreateInstance(supprimerModal).show();
+            });
+        })();
+
+        // ====================================================================
+        // Bloc filtres : curseur de coût à deux poignées + listes en cascade
+        // ====================================================================
+        (function () {
+            const MAX = @coutMaxPossible;
+            const minI = document.getElementById('coutMin');
+            const maxI = document.getElementById('coutMax');
+            const piste = document.getElementById('pisteActive');
+
+            // Empêche les poignées de se croiser, met à jour les montants et la barre verte.
+            function majCout(source) {
+                let a = +minI.value, b = +maxI.value;
+                if (a > b) { if (source === minI) { a = b; minI.value = a; } else { b = a; maxI.value = b; } }
+                document.getElementById('coutMinTxt').textContent = a;
+                document.getElementById('coutMaxTxt').textContent = b;
+                piste.style.left = (a / MAX * 100) + '%';
+                piste.style.right = (100 - b / MAX * 100) + '%';
+            }
+            minI.addEventListener('input', function () { majCout(minI); });
+            maxI.addEventListener('input', function () { majCout(maxI); });
+            majCout();
+
+            // Sous-catégories limitées à la catégorie choisie, nuisances à la sous-catégorie choisie.
+            const cat = document.getElementById('categorie');
+            const sous = document.getElementById('sousCategorie');
+            const nui = document.getElementById('nuisance');
+
+            function filtrer(select, attr, valeur) {
+                Array.from(select.options).forEach(function (o) {
+                    if (!o.value) return;
+                    const visible = !valeur || o.dataset[attr] === valeur;
+                    o.hidden = !visible;
+                    o.disabled = !visible;
+                });
+                if (select.selectedOptions[0] && select.selectedOptions[0].disabled) select.value = '';
+            }
+            function cascade() {
+                filtrer(sous, 'cat', cat.value);
+                filtrer(nui, 'souscat', sous.value);
+            }
+            // À l'envoi, on désactive les champs vides ou laissés à leur valeur par défaut :
+            // un champ désactivé n'est pas envoyé, donc l'adresse ne contient que les filtres remplis
+            // (ex. /Dossiers?rue=Jaures&coutMax=2000 au lieu de ...?cite=&rue=Jaures&entree=&...).
+            document.getElementById('formFiltres').addEventListener('submit', function () {
+                this.querySelectorAll('input[type=text], input[type=number], select').forEach(function (champ) {
+                    if (champ.value.trim() === '') champ.disabled = true;
+                });
+                if (+minI.value === 0) minI.disabled = true;
+                if (+maxI.value === MAX) maxI.disabled = true;
+            });
+            // Si on revient en arrière avec le bouton du navigateur, on réactive les champs.
+            window.addEventListener('pageshow', function () {
+                document.querySelectorAll('#formFiltres [disabled]').forEach(function (c) { c.disabled = false; });
+                cascade();
+            });
+
+            cat.addEventListener('change', cascade);
+            sous.addEventListener('change', cascade);
+            cascade();
+        })();
+
+        // ====================================================================
+        // Bloc 2 : changement de taille de page + barre de défilement du haut
+        // La pagination elle-même est faite par le serveur (liens générés plus haut).
+        // ====================================================================
+        (function () {
+            // ---- Changement du nombre de dossiers par page ----
+            // On recharge /Dossiers avec la nouvelle taille et on revient à la première page.
+            const selectTaille = document.getElementById('pageSize');
+            if (selectTaille) selectTaille.addEventListener('change', function () {
+                const url = new URL(window.location.href);
+                url.searchParams.set('pageSize', this.value);
+                url.searchParams.set('page', '1');
+                window.location.href = url.toString();
+            });
+
+            // ---- Barre de défilement horizontale synchronisée en haut du tableau ----
+            const haut = document.getElementById('scrollHaut');            // la barre du haut
+            const hautInner = document.getElementById('scrollHautInner');  // contenu vide qui donne sa largeur à la barre
+            const conteneur = document.getElementById('scrollTable');      // la zone qui défile avec le tableau
+            const table = document.getElementById('tableDossiers');
+
+            // Donne à la barre du haut la même largeur que le tableau, et la cache si le tableau
+            // tient dans l'écran (donc s'il n'y a rien à faire défiler).
+            function ajusterScrollHaut() {
+                hautInner.style.width = table.scrollWidth + 'px';
+                haut.hidden = table.scrollWidth <= conteneur.clientWidth;
+            }
+
+            // Recopie la position de défilement d'une zone vers l'autre.
+            // Le drapeau "enCours" évite une boucle sans fin : quand on déplace l'autre zone,
+            // elle déclenche à son tour un événement "scroll" qu'il faut ignorer une fois.
+            let enCours = false;
+            function synchro(source, cible) {
+                source.addEventListener('scroll', function () {
+                    if (enCours) { enCours = false; return; }
+                    enCours = true;
+                    cible.scrollLeft = source.scrollLeft;
+                });
+            }
+            synchro(haut, conteneur);   // on fait défiler la barre du haut -> le tableau suit
+            synchro(conteneur, haut);   // on fait défiler le tableau -> la barre du haut suit
+
+            // On réajuste la largeur si la fenêtre change de taille...
+            window.addEventListener('resize', ajusterScrollHaut);
+            // ...ou si le tableau lui-même change de taille.
+            if (window.ResizeObserver) new ResizeObserver(ajusterScrollHaut).observe(table);
+
+            // Premier réglage au chargement de la page
+            ajusterScrollHaut();
+        })();
+    </script>
+}
