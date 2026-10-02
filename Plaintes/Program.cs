@@ -39,8 +39,6 @@ builder.Services.AddAuthentication(opt =>
         var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
         var userSrv = ctx.HttpContext.RequestServices.GetRequiredService<IUtilisateurSrv>();
         var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-        foreach (var c in ctx.Principal!.Claims)
-            logger.LogInformation("Claim reçu d'Entra : {Type} = {Value}", c.Type, c.Value);
 
         var email = ctx.Principal!.FindFirstValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")
                    ?? ctx.Principal.FindFirstValue(ClaimTypes.NameIdentifier);

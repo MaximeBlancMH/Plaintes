@@ -1,6 +1,6 @@
 ﻿@* ============================================================================
    Page "Dossiers" : liste des plaintes sous forme de tableau.
-   - Les données viennent de HomeController.Dossiers(), qui envoie la liste des plaintes à cette vue.
+   - Les données viennent de DossierController.Dossiers(), qui envoie la liste des plaintes à cette vue.
    - La pagination (10 / 25 / 50) est faite par le serveur : le contrôleur ne renvoie que les
      dossiers de la page demandée, via les paramètres d'adresse "page" et "pageSize"
      (ex. /Dossiers?page=2&pageSize=25). Changer de page recharge donc la page.
@@ -80,7 +80,7 @@
     {
         var valeurs = new Microsoft.AspNetCore.Routing.RouteValueDictionary { ["page"] = n, ["pageSize"] = taillePage };
         foreach (var f in filtresActifs.Where(f => f.Value != null)) valeurs[f.Key] = f.Value;
-        return Url.Action("Dossiers", "Home", valeurs)!;
+        return Url.Action("Dossiers", "Dossier", valeurs)!;
     }
 
     // Lien d'un en-tête triable : passe au mode suivant (normal -> asc -> desc -> normal),
@@ -91,7 +91,7 @@
         foreach (var f in filtresActifs.Where(f => f.Value != null && f.Key != "tri" && f.Key != "sens")) valeurs[f.Key] = f.Value;
         if (fTri != cle) { valeurs["tri"] = cle; valeurs["sens"] = "asc"; }
         else if (fSens == "asc") { valeurs["tri"] = cle; valeurs["sens"] = "desc"; }
-        return Url.Action("Dossiers", "Home", valeurs)!;
+        return Url.Action("Dossiers", "Dossier", valeurs)!;
     }
     // Flèche affichée à côté de la colonne triée.
     string Fleche(string cle) => fTri != cle ? "" : (fSens == "asc" ? " ▲" : " ▼");
@@ -190,7 +190,7 @@
 @* Deux colonnes : panneau de filtres à gauche (col-lg-3), tableau à droite (col-lg-9). *@
 <div class="row g-3 align-items-start">
 <aside class="col-12 col-lg-3 panneau-gauche">
-    <form method="get" action="@Url.Action("Dossiers", "Home")" class="card shadow-sm card-mh" id="formFiltres">
+    <form method="get" action="@Url.Action("Dossiers", "Dossier")" class="card shadow-sm card-mh" id="formFiltres">
         <div class="card-body">
             <h2 class="h5 titre-mh mb-3">Filtres</h2>
 
@@ -289,7 +289,7 @@
                 <button type="submit" class="btn btn-mh">Appliquer</button>
                 @if (filtreActif)
                 {
-                    <a class="btn btn-outline-secondary" href="@Url.Action("Dossiers", "Home")">Réinitialiser</a>
+                    <a class="btn btn-outline-secondary" href="@Url.Action("Dossiers", "Dossier")">Réinitialiser</a>
                 }
             </div>
         </div>
@@ -321,7 +321,7 @@
 </aside>
 <div class="col-12 col-lg-9">
 
-@* Carte (cadre blanc) qui contient la barre d'options, le tableau et la pagination *@
+@* Carte qui contient la barre d'options, le tableau et la pagination *@
 <div class="card shadow-sm card-mh">
     <div class="card-body">
         @* Pagination du haut*@
@@ -422,7 +422,7 @@
                                                    rel="noopener" est une protection de sécurité pour les liens en nouvel onglet.
                                                    title = infobulle avec le type et la taille du fichier.
                                                    Texte du lien = nom du fichier, ou "Pièce N" si le nom est vide. *@
-                                                <a href="@Url.Action("PieceJointeFichier", "Home", new { id = pj.NumPiece })"
+                                                <a href="@Url.Action("PieceJointeFichier", "Dossier", new { id = pj.NumPiece })"
                                                    target="_blank" rel="noopener"
                                                    title="@pj.TypePiece – @pj.TaillePiece">@(string.IsNullOrWhiteSpace(pj.LibPiece) ? $"Pièce {pj.NumPiece}" : pj.LibPiece)</a>
                                             </li>
