@@ -59,7 +59,7 @@ public class PlainteFiltres
     public int? numPlainte { get; set; }
     public string? cite { get; set; }
     public string? rue { get; set; }
-    public string? ville { get; set; }
+    public string? partieCommune { get; set; }
     public string? entree { get; set; }
     public string? reclamation { get; set; }
     public string? categorie { get; set; }
@@ -67,4 +67,7 @@ public class PlainteFiltres
     public string? nuisance { get; set; }
     public int? coutMin { get; set; }
     public int? coutMax { get; set; }
+    // Tri : nom de la colonne (num, utilisateur, secteur, cite, partiecommune, periode, reclamation, categorie) et sens ("asc" ou "desc").
+    public string? tri { get; set; }
+    public string? sens { get; set; }
 }

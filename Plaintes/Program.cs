@@ -60,8 +60,8 @@ builder.Services.AddAuthentication(opt =>
         {
             var name = ctx.Principal!.FindFirstValue("http://schemas.microsoft.com/identity/claims/displayname");
             if (user.NomUser == null)
-                await userSrv.UpdateNameUser(user, name);
-            identity.AddClaim(new Claim(ClaimTypes.Name, user.NomUser));
+                await userSrv.UpdateNameUser(user.IdUser, name);
+            identity.AddClaim(new Claim(ClaimTypes.Name, name));
             identity.AddClaim(new Claim(ClaimTypes.Role, user.Access));
             logger.LogInformation("Connexion de {Nomuser}", user.NomUser);
         }

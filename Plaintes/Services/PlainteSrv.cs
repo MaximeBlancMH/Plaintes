@@ -3,6 +3,7 @@ using Plaintes.Data;
 using Plaintes.Models;
 using Plaintes.Services.IServices;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace Plaintes.Services
 {
@@ -14,6 +15,38 @@ namespace Plaintes.Services
         {
             _context = context;
             _logger = logger;
+        }
+
+        private static IOrderedQueryable<T> Trier<T, TKey>(IQueryable<T> query, Expression<Func<T, TKey>> keySelector, string sens)
+        {
+            if (sens == "asc")
+            {
+                return query.OrderBy(keySelector);
+            }
+            else
+            {
+                return query.OrderByDescending(keySelector);
+            }
+        }
+
+        private static IOrderedQueryable<Plainte> AppliquerTri(IQueryable<Plainte> query, string tri, string sens)
+        {
+            IOrderedQueryable<Plainte> tries = tri?.ToLowerInvariant() switch
+            {
+                "numplainte" => Trier(query, p => p.NumPlainte, sens),
+                "cite" => Trier(query, p => p.NumCiteNavigation.LibCite, sens),
+                "rue" => Trier(query, p => p.CodeRueNavigation.LibRue, sens),
+                "partiecommune" => Trier(query, p => p.CodePartieCommuneNavigation.LibPartieCommune, sens),
+                "entree" => Trier(query, p => p.NumEntree, sens),
+                "reclamation" => Trier(query, p => p.NumReclamation, sens),
+                "cout" => Trier(query, p => p.Composers.Where(c => !c.SupprDet).Sum(c => c.Cout), sens),
+                "categorie" => Trier(query, p => p.CodeCatNavigation.LibCat, sens),
+                "datecreation" => Trier(query, p => p.DateCreation, sens),
+                "datedeb" => Trier(query, p => p.DateDeb, sens),
+                _ => Trier(query, p => p.DateCreation, sens),
+            };
+
+            return tries.ThenByDescending(p => p.NumPlainte);
         }
 
         public async Task<List<Plainte>> getPlaintes()
@@ -65,7 +98,7 @@ namespace Plaintes.Services
             return result;
         }
 
-        public async Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, int pageNumber, int pageSize)
+        public async Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize)
         {
             PagedResult<Plainte> result = new PagedResult<Plainte>();
             var query = _context.Plaintes.Where(p => !p.Suppr);
@@ -81,9 +114,9 @@ namespace Plaintes.Services
             {
                 query = query.Where(p => p.CodeRueNavigation.LibRue.Contains(filtres.rue));
             }
-            if (!string.IsNullOrEmpty(filtres.ville))
+            if (!string.IsNullOrEmpty(filtres.partieCommune))
             {
-                query = query.Where(p => p.CodePartieCommuneNavigation.LibPartieCommune.Contains(filtres.ville));
+                query = query.Where(p => p.CodePartieCommuneNavigation.LibPartieCommune.Contains(filtres.partieCommune));
             }
             if (!string.IsNullOrEmpty(filtres.entree))
             {
@@ -117,6 +150,8 @@ namespace Plaintes.Services
             result.Page = pageNumber;
             result.PageSize = pageSize;
 
+            query = AppliquerTri(query, tri, sens);
+
             result.Plaintes = await query
                 .AsSplitQuery()
                 .Include(p => p.IdUserNavigation)
@@ -127,9 +162,6 @@ namespace Plaintes.Services
                 .Include(p => p.Composers.Where(c => !c.SupprDet))
                     .ThenInclude(c => c.CodeNuisanceNavigation)
                         .ThenInclude(n => n.CodeSousCatNavigation)
-                .OrderByDescending(p => p.DateCreation)
-                .ThenByDescending(p => p.DateDeb)
-                .ThenByDescending(p => p.NumPlainte)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();

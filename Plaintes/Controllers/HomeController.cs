@@ -21,11 +21,8 @@ namespace Plaintes.Controllers
             _plainteSrv = plainteSrv;
         }
 
-        [Authorize]
-        public IActionResult Index()
-        {
-            return View();
-        }
+        [Route("")]
+        public IActionResult Index() => RedirectToAction("Dossiers");
 
         [Authorize]
         public IActionResult Privacy()
@@ -41,12 +38,12 @@ namespace Plaintes.Controllers
 
         [Authorize]
         [Route("Dossiers")]
-        public async Task<IActionResult> Dossiers(PlainteFiltres filtres, int page = 1, int pageSize = 10)
+        public async Task<IActionResult> Dossiers(PlainteFiltres filtres, string tri, string sens, int page = 1, int pageSize = 10)
         {
             if (pageSize is not (10 or 25 or 50)) pageSize = 10;
 
             // On récupère les plaintes selon les filtres
-            PagedResult<Plainte> result = await _plainteSrv.getPlaintesWithFilters(filtres, page, pageSize);
+            PagedResult<Plainte> result = await _plainteSrv.getPlaintesWithFilters(filtres, tri, sens, page, pageSize);
 
             // On récupère uniquement les plaintes de la page demandée, avec leurs relations sauf les pièces jointes.
             // On charge les pièces jointes sans leurs fichiers pour garder la liste légère.

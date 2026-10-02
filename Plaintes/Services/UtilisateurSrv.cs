@@ -16,8 +16,14 @@ namespace Plaintes.Services
             _logger = logger;
         }
 
-        public async Task UpdateNameUser(Utilisateur user, string newName)
+        public async Task UpdateNameUser(int idUser, string newName)
         {
+            var user = await _context.Utilisateurs.FindAsync(idUser);
+            if (user == null)
+            {
+                _logger.LogWarning($"Utilisateur with ID {idUser} not found.");
+                return;
+            }
             user.NomUser = newName;
 
 

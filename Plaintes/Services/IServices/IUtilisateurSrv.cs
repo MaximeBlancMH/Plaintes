@@ -4,6 +4,6 @@ namespace Plaintes.Services.IServices
 {
     public interface IUtilisateurSrv
     {
-        Task UpdateNameUser(Utilisateur user, string newName);
+        Task UpdateNameUser(int idUser, string newName);
     }
 }

@@ -18,7 +18,7 @@ namespace Plaintes.Services.IServices
 
         Task<List<Plainte>> getPlaintes();
         Task<PagedResult<Plainte>> getPlaintesForPage(int pageNumber, int pageSize);
-        Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, int pageNumber, int pageSize);
+        Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize);
 
 
     }

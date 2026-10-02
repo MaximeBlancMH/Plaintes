@@ -198,8 +198,27 @@ html {
   min-height: 100%;
 }
 
+/* Le corps de page occupe au moins toute la hauteur : le footer reste en bas, sans espace blanc dessous. */
 body {
-  margin-bottom: 60px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+body > .container {
+  flex: 1 0 auto;
+}
+
+/* Pied de page, dans le style de la barre de navigation */
+.footer-mh {
+  background-color: var(--mh-blue);
+  border-top: 3px solid var(--mh-green);
+  color: rgba(255, 255, 255, .85);
+  box-shadow: 0 -.25rem .75rem rgba(0, 0, 0, .15);
+  margin-top: 1rem;
+  padding: .9rem 0;
+  font-size: .875rem;
+  text-align: center;
 }
 
 .form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
