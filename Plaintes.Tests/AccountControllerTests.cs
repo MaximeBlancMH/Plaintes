@@ -10,7 +10,7 @@ namespace Plaintes.Tests
 {
     public class AccountControllerTests
     {
-        private static AccountController CreerController()
+        internal static AccountController CreerController()
         {
             var httpContext = new DefaultHttpContext();
             var actionContext = new ActionContext(httpContext, new RouteData(), new ControllerActionDescriptor());

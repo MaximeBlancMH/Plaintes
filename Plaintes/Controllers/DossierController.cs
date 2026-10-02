@@ -22,7 +22,6 @@ namespace Plaintes.Controllers
         }
 
         [Authorize]
-        [Route("/")]
         public async Task<IActionResult> Dossiers(PlainteFiltres filtres, string tri, string sens, int page = 1, int pageSize = 10)
         {
             if (pageSize is not (10 or 25 or 50)) pageSize = 10;
@@ -81,5 +80,17 @@ namespace Plaintes.Controllers
 
         [Authorize]
         [Route("{id:int}/delete")]
+        public async Task<IActionResult> SupprimerPlainte(int id)
+        {
+            var plainte = await _context.Plaintes.FindAsync(id);
+            if (plainte == null || plainte.Suppr)
+            {
+                return NotFound();
+            }
+            // Marquer la plainte comme supprimée
+            plainte.Suppr = true;
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Dossiers));
+        }
     }
 }

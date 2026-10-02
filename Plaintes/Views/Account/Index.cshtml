@@ -1,0 +1,24 @@
+@model CompteViewModel
+@{
+    ViewData["Title"] = "Mon compte";
+}
+
+<div class="row justify-content-center my-5">
+    <div class="col-12 col-md-8 col-lg-6">
+        <h1 class="h3 mb-3 titre-mh">Mon compte</h1>
+        <div class="card shadow-sm card-mh">
+            <div class="card-body p-4">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Nom Prénom</dt>
+                    <dd class="col-sm-8">@(string.IsNullOrWhiteSpace(Model.Nom) ? "—" : Model.Nom)</dd>
+
+                    <dt class="col-sm-4">Email</dt>
+                    <dd class="col-sm-8">@(string.IsNullOrWhiteSpace(Model.Email) ? "—" : Model.Email)</dd>
+
+                    <dt class="col-sm-4">Droits</dt>
+                    <dd class="col-sm-8 mb-0">@Model.DroitLibelle</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>

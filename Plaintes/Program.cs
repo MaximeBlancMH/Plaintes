@@ -61,6 +61,8 @@ builder.Services.AddAuthentication(opt =>
                 await userSrv.UpdateNameUser(user.IdUser, name);
             identity.AddClaim(new Claim(ClaimTypes.Name, name));
             identity.AddClaim(new Claim(ClaimTypes.Role, user.Access));
+            if (!string.IsNullOrEmpty(user.UserEmail))
+                identity.AddClaim(new Claim(ClaimTypes.Email, user.UserEmail));
             logger.LogInformation("Connexion de {Nomuser}", user.NomUser);
         }
 

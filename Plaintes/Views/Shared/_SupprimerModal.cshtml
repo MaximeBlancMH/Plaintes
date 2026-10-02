@@ -1,0 +1,54 @@
+﻿@* ============================================================================
+   Modal (fenêtre de confirmation) de suppression, réutilisable.
+   Usage : <partial name="_SupprimerModal" /> dans la vue, puis, sur chaque bouton de suppression :
+     data-action="supprimer"  data-id="123"  data-url="/Dossiers/123/delete"  data-resume="texte optionnel"
+   Il est caché par défaut ; le script ci-dessous l'ouvre quand on clique sur un tel bouton.
+   ============================================================================ *@
+<div class="modal fade" id="supprimerModal" tabindex="-1" aria-labelledby="supprimerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header modal-header-danger">
+                <h5 class="modal-title" id="supprimerModalLabel">Supprimer le dossier</h5>
+                @* data-bs-dismiss="modal" : Bootstrap ferme le modal au clic, sans code supplémentaire *@
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            @* Le formulaire envoie un POST vers /Dossiers/{id}/delete (action à créer dans le contrôleur).
+               Son "action" est remplie par le JavaScript avec le "data-url" du bouton cliqué. *@
+            <form method="post" id="supprimerForm" class="m-0">
+                @* Jeton anti-falsification (CSRF) : le contrôleur pourra le vérifier avec [ValidateAntiForgeryToken] *@
+                @Html.AntiForgeryToken()
+                <div class="modal-body">
+                    @* Le <strong> est rempli par le JavaScript avec "n° 123 (nom de la cité)" *@
+                    <p class="mb-2">Voulez-vous vraiment supprimer le dossier <strong id="supprimerLibelle"></strong> ?</p>
+                    <p class="mb-0 text-muted">Cette action retire le dossier de la liste.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-danger">Supprimer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        // On écoute les clics sur tout le document : ça marche aussi pour les lignes ajoutées ou masquées plus tard.
+        // Le script est chargé avant Bootstrap, qui n'est utilisé qu'au moment du clic.
+        document.addEventListener('click', function (e) {
+            // closest() remonte depuis l'élément cliqué jusqu'à un bouton "supprimer" ; sinon on sort.
+            const btn = e.target.closest('[data-action="supprimer"]');
+            if (!btn) return;
+
+            // dataset lit les attributs data-xxx du bouton (data-id -> dataset.id, data-resume -> dataset.resume)
+            const cite = btn.dataset.resume;
+            // On dirige le formulaire vers l'adresse du bouton (ex. /Dossiers/123/delete)...
+            document.getElementById('supprimerForm').action = btn.dataset.url;
+            // ...et le texte de confirmation, par exemple "n° 123 (Les Bruyères)".
+            document.getElementById('supprimerLibelle').textContent =
+                'n° ' + btn.dataset.id + (cite ? ' (' + cite + ')' : '');
+            // On ouvre le modal avec l'API de Bootstrap.
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('supprimerModal')).show();
+        });
+    })();
+</script>

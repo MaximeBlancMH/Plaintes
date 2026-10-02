@@ -430,15 +430,16 @@
                                     </ul>
                                 }
                             </td>
-                            @* Colonne 12 : boutons d'action. Ils ne sont pas encore reliés à une page :
-                               "data-action" dit quelle action le bouton représente et "data-id" porte le n° de plainte,
-                               pour que le JavaScript (ou un futur lien) sache sur quel dossier agir.
-                               "data-resume" (bouton Supprimer) contient le nom de la cité, affiché dans le modal. *@
+                            @* Colonne 12 : boutons d'action.
+                               Modifier et Télécharger sont des liens vers /Dossiers/{id}/update et /Dossiers/{id}/download.
+                               Supprimer ouvre le modal de confirmation : "data-url" contient l'adresse /Dossiers/{id}/delete
+                               où le formulaire du modal enverra son POST, "data-id" le n° de plainte et
+                               "data-resume" le nom de la cité, affiché dans le modal. *@
                             <td class="cell-actions">
                                 <div class="d-flex flex-column gap-1">
-                                    <button type="button" class="btn btn-sm btn-outline-mh" data-action="modifier" data-id="@p.NumPlainte">Modifier</button>
-                                    <button type="button" class="btn btn-sm btn-outline-mh" data-action="telecharger" data-id="@p.NumPlainte">Télécharger</button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" data-action="supprimer" data-id="@p.NumPlainte" data-resume="@(p.NumCiteNavigation?.LibCite ?? "")">Supprimer</button>
+                                    <a class="btn btn-sm btn-outline-mh" href="@Url.Content($"~/Dossiers/{p.NumPlainte}/update")">Modifier</a>
+                                    <a class="btn btn-sm btn-outline-mh" href="@Url.Content($"~/Dossiers/{p.NumPlainte}/download")">Télécharger</a>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-action="supprimer" data-id="@p.NumPlainte" data-url="@Url.Content($"~/Dossiers/{p.NumPlainte}/delete")" data-resume="@(p.NumCiteNavigation?.LibCite ?? "")">Supprimer</button>
                                 </div>
                             </td>
                         </tr>
@@ -460,70 +461,13 @@
 </div>@* fin colonne tableau *@
 </div>@* fin ligne filtres + tableau *@
 
-@* ============================================================================
-   Modal (fenêtre de confirmation) de suppression.
-   Il est caché par défaut ; le JavaScript l'ouvre quand on clique sur "Supprimer" dans une ligne.
-   ============================================================================ *@
-<div class="modal fade" id="supprimerModal" tabindex="-1" aria-labelledby="supprimerModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header modal-header-danger">
-                <h5 class="modal-title" id="supprimerModalLabel">Supprimer le dossier</h5>
-                @* data-bs-dismiss="modal" : Bootstrap ferme le modal au clic, sans code supplémentaire *@
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
-            </div>
-            @* Le formulaire envoie un POST vers /Dossiers/Supprimer (action à créer dans le contrôleur) *@
-            <form method="post" action="@Url.Content("~/Dossiers/Supprimer")" class="m-0">
-                @* Jeton anti-falsification (CSRF) : le contrôleur pourra le vérifier avec [ValidateAntiForgeryToken] *@
-                @Html.AntiForgeryToken()
-                @* Champ caché rempli par le JavaScript avec le n° de la plainte à supprimer *@
-                <input type="hidden" name="numPlainte" id="supprimerNumPlainte" />
-                <div class="modal-body">
-                    @* Le <strong> est rempli par le JavaScript avec "n° 123 (nom de la cité)" *@
-                    <p class="mb-2">Voulez-vous vraiment supprimer le dossier <strong id="supprimerLibelle"></strong> ?</p>
-                    <p class="mb-0 text-muted">Cette action retire le dossier de la liste.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
-                    <button type="submit" class="btn btn-danger">Supprimer</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@* Modal de suppression (HTML + script) : voir Views/Shared/_SupprimerModal.cshtml *@
+<partial name="_SupprimerModal" />
 
 @* Cette section est insérée par _Layout.cshtml à la fin de la page (après jQuery et Bootstrap),
    ce qui garantit que l'objet "bootstrap" existe quand le script s'exécute. *@
 @section Scripts {
     <script>
-        // ====================================================================
-        // Bloc 1 : ouverture du modal de suppression
-        // Chaque bloc est entouré de (function () { ... })(); pour que ses variables
-        // restent privées et n'entrent pas en conflit avec celles des autres blocs.
-        // ====================================================================
-        (function () {
-            const supprimerModal = document.getElementById('supprimerModal');
-
-            // On écoute les clics sur tout le tableau (et pas sur chaque bouton) : ça marche aussi
-            // pour les lignes masquées/affichées par la pagination.
-            document.getElementById('tableDossiers').addEventListener('click', function (e) {
-                // closest() remonte depuis l'élément cliqué jusqu'à un bouton "supprimer" ;
-                // si on a cliqué ailleurs, il n'y en a pas et on sort de la fonction.
-                const btn = e.target.closest('[data-action="supprimer"]');
-                if (!btn) return;
-
-                // dataset lit les attributs data-xxx du bouton (data-id -> dataset.id, data-resume -> dataset.resume)
-                const cite = btn.dataset.resume;
-                // On remplit le champ caché du formulaire avec le n° de plainte...
-                document.getElementById('supprimerNumPlainte').value = btn.dataset.id;
-                // ...et le texte de confirmation, par exemple "n° 123 (Les Bruyères)".
-                document.getElementById('supprimerLibelle').textContent =
-                    'n° ' + btn.dataset.id + (cite ? ' (' + cite + ')' : '');
-                // On ouvre le modal avec l'API de Bootstrap.
-                bootstrap.Modal.getOrCreateInstance(supprimerModal).show();
-            });
-        })();
-
         // ====================================================================
         // Bloc colonnes : afficher / masquer les colonnes du tableau
         // Une feuille de style dynamique masque la Nième colonne (en-tête + cellules) ;

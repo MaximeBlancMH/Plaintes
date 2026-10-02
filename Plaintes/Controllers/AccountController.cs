@@ -2,7 +2,9 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Plaintes.Models;
 using Sustainsys.Saml2.AspNetCore2;
+using System.Security.Claims;
 
 namespace Plaintes.Controllers
 {
@@ -16,6 +18,19 @@ namespace Plaintes.Controllers
         {
             _config = config;
         }
+        [HttpGet("")]
+        [Authorize]
+        public IActionResult Index()
+        {
+            var model = new CompteViewModel
+            {
+                Nom = User.FindFirstValue(ClaimTypes.Name),
+                Email = User.FindFirstValue(ClaimTypes.Email),
+                Droit = User.FindFirstValue(ClaimTypes.Role)
+            };
+            return View(model);
+        }
+
         [HttpGet("Login")]
         public IActionResult Login(string? returnURl = "/")
         {
