@@ -140,11 +140,11 @@ namespace Plaintes.Services
             }
             if (filtres.coutMin.HasValue)
             {
-                query = query.Where(p => p.Composers.Any(c => c.Cout >= filtres.coutMin.Value));
+                query = query.Where(p => p.Composers.Where(c => !c.SupprDet).Any(c => c.Cout >= filtres.coutMin.Value));
             }
             if (filtres.coutMax.HasValue)
             {
-                query = query.Where(p => p.Composers.Any(c => c.Cout <= filtres.coutMax.Value));
+                query = query.Where(p => p.Composers.Where(c => !c.SupprDet).Any(c => c.Cout <= filtres.coutMax.Value));
             }
             result.TotalCount = await query.CountAsync();
             result.Page = pageNumber;
