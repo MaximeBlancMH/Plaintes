@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Data;
 using Plaintes.Models;
@@ -12,7 +13,7 @@ namespace Plaintes.Tests
 
         public PlainteSrvTests()
         {
-            _srv = new PlainteSrv(_ctx, NullLogger<PlainteSrv>.Instance);
+            _srv = new PlainteSrv(_ctx, NullLogger<PlainteSrv>.Instance, new ConfigurationBuilder().Build());
         }
 
         public void Dispose() => _ctx.Dispose();

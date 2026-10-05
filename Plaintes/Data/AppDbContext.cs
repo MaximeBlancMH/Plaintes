@@ -41,6 +41,9 @@ namespace Plaintes.Data
         public virtual DbSet<Tranche> Tranches { get; set; }
 
         public virtual DbSet<Utilisateur> Utilisateurs { get; set; }
+        public virtual DbSet<TypeFait> TypeFaits { get; set; }
+        public virtual DbSet<NaturePiece> NaturePieces { get; set; }
+
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -285,6 +288,13 @@ namespace Plaintes.Data
                     .HasForeignKey(d => d.NumPlainte)
                     .OnDelete(DeleteBehavior.ClientSetNull)
                     .HasConstraintName("FK_PieceJointe_Plainte");
+
+                entity.Property(e => e.CodeNature).HasMaxLength(4).IsUnicode(false).HasColumnName("CODENATURE");
+                entity.Property(e => e.PrecisionNature).HasMaxLength(100).IsUnicode(false).HasColumnName("PRECISIONNATURE");
+
+                entity.HasOne(d => d.CodeNatureNavigation).WithMany(p => p.PieceJointes)
+                    .HasForeignKey(d => d.CodeNature)
+                    .HasConstraintName("FK_PieceJointe_NaturePiece");
             });
 
             modelBuilder.Entity<Plainte>(entity =>
@@ -357,6 +367,13 @@ namespace Plaintes.Data
                 entity.HasOne(d => d.NumCiteNavigation).WithMany(p => p.Plaintes)
                     .HasForeignKey(d => d.NumCite)
                     .HasConstraintName("FK_Plainte_Cite");
+
+                entity.Property(e => e.CodeFait).HasMaxLength(4).IsUnicode(false).HasColumnName("CODEFAIT");
+                entity.Property(e => e.PrecisionFait).HasMaxLength(250).IsUnicode(false).HasColumnName("PRECISIONFAIT");
+
+                entity.HasOne(d => d.CodeFaitNavigation).WithMany(p => p.Plaintes)
+                    .HasForeignKey(d => d.CodeFait)
+                    .HasConstraintName("FK_Plainte_TypeFait");
             });
 
             modelBuilder.Entity<Rue>(entity =>
@@ -452,6 +469,22 @@ namespace Plaintes.Data
                     .HasMaxLength(50)
                     .IsUnicode(false)
                     .HasColumnName("NOMUSER");
+            });
+
+            modelBuilder.Entity<TypeFait>(entity =>
+            {
+                entity.ToTable("typefait");
+                entity.HasKey(e => e.CodeFait).HasName("PK_TypeFait");
+                entity.Property(e => e.CodeFait).HasMaxLength(4).IsUnicode(false).HasColumnName("CODEFAIT");
+                entity.Property(e => e.LibFait).HasMaxLength(100).IsUnicode(false).HasColumnName("LIBFAIT");
+            });
+
+            modelBuilder.Entity<NaturePiece>(entity =>
+            {
+                entity.ToTable("naturepiece");
+                entity.HasKey(e => e.CodeNature).HasName("PK_NaturePiece");
+                entity.Property(e => e.CodeNature).HasMaxLength(4).IsUnicode(false).HasColumnName("CODENATURE");
+                entity.Property(e => e.LibNature).HasMaxLength(50).IsUnicode(false).HasColumnName("LIBNATURE");
             });
 
             OnModelCreatingPartial(modelBuilder);

@@ -92,5 +92,33 @@ namespace Plaintes.Controllers
             await _context.SaveChangesAsync();
             return RedirectToAction(nameof(Dossiers));
         }
+
+        [Authorize]
+        [Route("{id:int}/download")]
+        public async Task<IActionResult> TelechargerPlainte(int id)
+        {
+            var plainte = await _context.Plaintes
+                .Include(p => p.Composers.Where(c => !c.SupprDet))
+                    .ThenInclude(c => c.CodeNuisanceNavigation)
+                        .ThenInclude(n => n.CodeSousCatNavigation)
+                .Include(p => p.PieceJointes.Where(pj => !pj.SupprPj))
+                .Include(p => p.CodeRueNavigation)
+                .FirstOrDefaultAsync(p => p.NumPlainte == id && !p.Suppr);
+
+            var valeurs = await _plainteSrv.getValuesForPlainteFile(plainte);
+
+            if (valeurs == null)
+            {
+                _logger.LogWarning("Aucune plainte trouvée pour l'ID {PlainteId}.", id);
+                return NotFound();
+            }
+
+            // Générer le document Word de la plainte (à partir du modèle .docx)
+            var docBytes = await _plainteSrv.createPlainteFile(valeurs);
+            // Retourner le document Word en tant que fichier téléchargeable
+            return File(docBytes,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                $"plainte-{plainte.NumPlainte}.docx");
+        }
     }
 }

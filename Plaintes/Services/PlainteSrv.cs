@@ -1,20 +1,27 @@
-﻿using Microsoft.Identity.Client;
+﻿using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Vml.Spreadsheet;
+using DocumentFormat.OpenXml.Wordprocessing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Identity.Client;
 using Plaintes.Data;
 using Plaintes.Models;
 using Plaintes.Services.IServices;
-using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
+using System.Numerics;
 
 namespace Plaintes.Services
 {
     public class PlainteSrv : IPlainteSrv
     {
+        private readonly IConfiguration _config;
         private readonly AppDbContext _context;
         private readonly ILogger<PlainteSrv> _logger;
-        public PlainteSrv(AppDbContext context, ILogger<PlainteSrv> logger)
+        public PlainteSrv(AppDbContext context, ILogger<PlainteSrv> logger, IConfiguration config)
         {
             _context = context;
             _logger = logger;
+            _config = config;
         }
 
         private static IOrderedQueryable<T> Trier<T, TKey>(IQueryable<T> query, Expression<Func<T, TKey>> keySelector, string sens)
@@ -168,64 +175,151 @@ namespace Plaintes.Services
             return result;
         }
 
-        //public async Task<Plainte> getPlainteByNumPlaintAsync(int numPlainte)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.FirstOrDefault(p => p.NumPlainte == numPlainte);
-        //}
+        public async Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs)
+        {
+            string path = _config["ModelePlainte"];
+            using var ms = new MemoryStream();
+            using (var fs = File.OpenRead(path))
+                fs.CopyTo(ms);
+            ms.Position = 0;
 
-        //public async Task<List<Plainte>> getPlaintesByCite(string cite)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.NumCiteNavigation.LibCite.Contains(cite)).ToList();
-        //}
+            using (var doc = WordprocessingDocument.Open(ms, true))
+            {
+                var main = doc.MainDocumentPart!;
 
-        //public async Task<List<Plainte>> getPlaintesByRue(string rue)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.CodeRueNavigation.LibRue.Contains(rue)).ToList();
-        //}
+                var paragraphes = main.Document.Body!.Descendants<Paragraph>()
+                    .Concat(main.HeaderParts.SelectMany(h => h.Header.Descendants<Paragraph>()))
+                    .Concat(main.FooterParts.SelectMany(f => f.Footer.Descendants<Paragraph>()))
+                    .Where(p => p.InnerText.Contains("{{"))
+                    .ToList();
 
-        //public async Task<List<Plainte>> getPlaintesByVille(string ville)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.CodePartieCommuneNavigation.LibPartieCommune.Contains(ville)).ToList();
-        //}
+                foreach (var p in paragraphes)
+                {
+                    foreach (var kv in valeurs)
+                    {
+                        ReplaceTextInParagraph(p, kv.Key, kv.Value);
+                    }
+                }
+            }
 
-        //public async Task<List<Plainte>> getPlaintesByEntree(string entree)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.NumEntree.Contains(entree)).ToList();
-        //}
+            return ms.ToArray();
+        }
 
-        //public async Task<List<Plainte>> getPlaintesByReclamation(string reclamation)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.NumReclamation.Contains(reclamation)).ToList();
-        //}
+        private static void ReplaceTextInParagraph(Paragraph p, string key, string value)
+        {
+            int depart = 0;
+            while(true)
+            {
+                var textes = p.Descendants<Text>().ToList();
+                var fullText = string.Concat(textes.Select(t => t.Text));
 
-        //public async Task<List<Plainte>> getPlaintesByCategorie(string codeCat)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.CodeCat == codeCat).ToList();
-        //}
+                var firstIndex = fullText.IndexOf(key, depart, StringComparison.Ordinal);
+                if (firstIndex < 0) return;
+                var lastIndex = firstIndex + key.Length;
 
-        //public async Task<List<Plainte>> getPlaintesBySousCat(string codeSousCat)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.Composers.Any(c => c.CodeNuisanceNavigation.CodeSousCat == codeSousCat)).ToList();
-        //}
+                int index = 0;
+                bool firstSeen = false;
+                foreach (var t in textes)
+                {
+                    int textBegin = index;
+                    int textEnd = index + t.Text.Length;
+                    index = textEnd;
 
-        //public async Task<List<Plainte>> getPlaintesByNuisance(string codeNuisance)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.Composers.Any(c => c.CodeNuisance == codeNuisance)).ToList();
-        //}
+                    if (textEnd <= firstIndex || textBegin >= lastIndex) continue;
 
-        //public async Task<List<Plainte>> getPlaintesByCout(int min, int max)
-        //{
-        //    var plaintes = await getPlaintes();
-        //    return plaintes.Where(p => p.Composers.Any(c => c.Cout >= min && c.Cout <= max)).ToList();
-        //}
+                    var before = t.Text.Substring(0, Math.Max(0, firstIndex - textBegin));
+                    var after = t.Text.Substring(Math.Min(t.Text.Length, lastIndex - textBegin));
+
+                    t.Text = firstSeen ? after : before + value + after;
+                    t.Space = SpaceProcessingModeValues.Preserve;
+                    firstSeen = true;
+                }
+
+                index = firstIndex + value.Length;
+            }
+        }
+
+        public async Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte)
+        {
+            var valeurs = new Dictionary<string, string>();
+
+            if (plainte != null)
+            {
+                valeurs["{{CASE_VOLONTAIRES}}"] = "☐";
+                valeurs["{{CASE_INCENDIE}}"] = "☐";
+                valeurs["{{CASE_TAGS}}"] = "☐";
+                valeurs["{{CASE_ORDURES}}"] = "☐";
+                valeurs["{{CASE_AUTRES_FAITS}}"] = "☐";
+                valeurs["{{AUTRES_FAITS}}"] = "";
+
+                if (plainte.CodeFait == "DVOL")
+                {
+                    valeurs["{{CASE_VOLONTAIRES}}"] = "☒";
+                }
+                else if (plainte.CodeFait == "DINC")
+                {
+                    valeurs["{{CASE_INCENDIE}}"] = "☒";
+                }
+                else if (plainte.CodeFait == "DTAG")
+                {
+                    valeurs["{{CASE_TAGS}}"] = "☒";
+                }
+                else if (plainte.CodeFait == "DORD")
+                {
+                    valeurs["{{CASE_ORDURES}}"] = "☒";
+                }
+                else if (plainte.CodeFait == "DAUT")
+                {
+                    valeurs["{{CASE_AUTRES_FAITS}}"] = "☒";
+                    valeurs["{{AUTRES_FAITS}}"] = plainte.PrecisionFait;
+                }
+
+                if (plainte.DateDeb != null)
+                {
+                    valeurs["{{CASE_DATE_LE}}"] = plainte.DateFin == null || plainte.DateDeb == plainte.DateFin ? "☒" : "☐";
+                    valeurs["{{DATE_LE}}"] = plainte.DateFin == null || plainte.DateDeb == plainte.DateFin ? plainte.DateDeb.ToString("dd/MM/yyyy") : "";
+                    valeurs["{{CASE_DATE_ENTRE}}"] = plainte.DateFin != null && plainte.DateDeb != plainte.DateFin ? "☒" : "☐";
+                    valeurs["{{DATE_ENTRE}}"] = plainte.DateFin != null && plainte.DateDeb != plainte.DateFin ? $"le {plainte.DateDeb.ToString("dd/MM/yyyy")} et le {plainte.DateFin?.ToString("dd/MM/yyyy")}" : "";
+                }
+
+                valeurs["{{LIEU}}"] = $"{plainte.NumRue} {plainte.CodeRueNavigation.LibRue} à {plainte.CodeRueNavigation.Ville} ({plainte.CodeRueNavigation.Cp.Substring(0, 2)})";
+
+                valeurs["{{EXPOSE}}"] = $"{plainte.Commentaire} (Réclamation Mâcon Habitat {plainte.NumReclamation}).";
+
+                if (plainte.PieceJointes.Count() > 0)
+                {
+                    foreach (var pj in plainte.PieceJointes)
+                    {
+                        if (pj.CodeNature == "PHOT")
+                            valeurs["{{CASE_PHOTOS}}"] = "☒";
+                        else if (pj.CodeNature == "FACT")
+                            valeurs["{{CASE_FACTURES}}"] = "☒";
+                        else if (pj.CodeNature == "AUTR")
+                        {
+                            valeurs["{{CASE_AUTRES_PJ}}"] = "☒";
+                            valeurs["{{AUTRES_PJ}}"] += $"{pj.PrecisionNature}\n";
+                        }
+                    }
+
+                    valeurs["{{CASE_PHOTOS}}"] = "☐";
+                    valeurs["{{CASE_FACTURES}}"] = "☐";
+                    valeurs["{{CASE_AUTRES_PJ}}"] = "☐";
+                    valeurs["{{AUTRES_PJ}}"] = "";
+                }
+                else
+                {
+                    valeurs["{{CASE_PHOTOS}}"] = "☐";
+                    valeurs["{{CASE_FACTURES}}"] = "☐";
+                    valeurs["{{CASE_AUTRES_PJ}}"] = "☐";
+                    valeurs["{{AUTRES_PJ}}"] = "";
+                }
+
+                valeurs["{{DATE_JOUR}}"] = DateTime.Now.ToString("dd/MM/yyyy");
+
+                return valeurs;
+            }
+            
+            return null;
+        }
     }
 }

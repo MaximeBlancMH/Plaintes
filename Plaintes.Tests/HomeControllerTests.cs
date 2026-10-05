@@ -27,6 +27,8 @@ namespace Plaintes.Tests
             public Task<List<Plainte>> getPlaintes() => Task.FromResult(new List<Plainte>());
             public Task<PagedResult<Plainte>> getPlaintesForPage(int pageNumber, int pageSize) => Task.FromResult(new PagedResult<Plainte>());
             public Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize) => Task.FromResult(new PagedResult<Plainte>());
+            public Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs) => Task.FromResult(new byte[0]);
+            public Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte) => Task.FromResult(new Dictionary<string, string>());
         }
 
         [Fact]

@@ -19,5 +19,11 @@ public partial class PieceJointe
 
     public bool SupprPj { get; set; }
 
+    public string? CodeNature { get; set; }
+
+    public string? PrecisionNature { get; set; }
+
+    public virtual NaturePiece? CodeNatureNavigation { get; set; }
+
     public virtual Plainte NumPlainteNavigation { get; set; } = null!;
 }

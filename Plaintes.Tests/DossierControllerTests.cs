@@ -47,6 +47,10 @@ namespace Plaintes.Tests
                 PageSize = pageSize;
                 return Task.FromResult(Resultat);
             }
+
+            public Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs) => Task.FromResult(new byte[0]);
+            
+            public Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte) => Task.FromResult(new Dictionary<string, string>());
         }
 
         // ---------- Dossiers ----------

@@ -15,11 +15,11 @@ public partial class Plainte
 
     public int NumCite { get; set; }
 
-    public DateOnly? DateDeb { get; set; }
+    public DateOnly DateDeb { get; set; }
 
     public DateOnly? DateFin { get; set; }
 
-    public string? NumReclamation { get; set; }
+    public string NumReclamation { get; set; }
 
     public string? Commentaire { get; set; }
 
@@ -36,6 +36,12 @@ public partial class Plainte
     public DateTime DateCreation { get; set; }
 
     public DateTime DateModification { get; set; }
+
+    public string? CodeFait { get; set; }
+
+    public string? PrecisionFait { get; set; }
+
+    public virtual TypeFait? CodeFaitNavigation { get; set; }
 
     public virtual Categorie CodeCatNavigation { get; set; } = null!;
 
