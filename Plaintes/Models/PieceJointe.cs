@@ -23,6 +23,10 @@ public partial class PieceJointe
 
     public string? PrecisionNature { get; set; }
 
+    public string? CheminPiece { get; set; }
+
+    public string? HashPiece { get; set; }
+
     public virtual NaturePiece? CodeNatureNavigation { get; set; }
 
     public virtual Plainte NumPlainteNavigation { get; set; } = null!;

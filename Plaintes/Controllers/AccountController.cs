@@ -18,18 +18,6 @@ namespace Plaintes.Controllers
         {
             _config = config;
         }
-        [HttpGet("")]
-        [Authorize]
-        public IActionResult Index()
-        {
-            var model = new CompteViewModel
-            {
-                Nom = User.FindFirstValue(ClaimTypes.Name),
-                Email = User.FindFirstValue(ClaimTypes.Email),
-                Droit = User.FindFirstValue(ClaimTypes.Role)
-            };
-            return View(model);
-        }
 
         [HttpGet("Login")]
         public IActionResult Login(string? returnURl = "/")

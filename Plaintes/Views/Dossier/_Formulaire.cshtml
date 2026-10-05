@@ -1,0 +1,371 @@
+@* Formulaire de création d'une plainte (inclus par CreatePlainte.cshtml).
+   Les listes dépendantes (secteur -> cité -> adresse, catégorie -> sous-catégorie -> nuisance) sont
+   filtrées côté navigateur à partir des données du modèle ; seules les adresses sont chargées à la demande. *@
+@model CreatePlainteViewModel
+
+<form id="formPlainte" method="post" enctype="multipart/form-data" asp-controller="Dossier" asp-action="Create">
+    @* Erreur de conformité (voir PlainteSrv.validerPlainte) : cachée tant qu'il n'y en a pas. *@
+    <div id="erreurFormulaire" class="alert alert-danger" role="alert" hidden="@string.IsNullOrEmpty(Model.Erreur)">@Model.Erreur</div>
+
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    @* ---------- Informations générales ---------- *@
+    <div class="card shadow-sm card-mh mb-4">
+        <div class="card-header h5 mb-0 p-0"><button type="button" class="btn-plier collapsed" data-bs-toggle="collapse" data-bs-target="#partieGenerale" aria-expanded="false" aria-controls="partieGenerale">Informations générales</button></div>
+        <div class="card-body p-4 collapse" id="partieGenerale">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="reclamationA" class="form-label">@Html.DisplayNameFor(m => m.NumReclamation)</label>
+                    @* Le n° est saisi en deux nombres séparés par un tiret ; le champ caché reçoit "xxx-yyy". *@
+                    <div class="input-group">
+                        <input type="number" id="reclamationA" class="form-control" min="0" step="1" required />
+                        <span class="input-group-text">-</span>
+                        <input type="number" id="reclamationB" class="form-control" min="0" step="1" required />
+                    </div>
+                    <input asp-for="NumReclamation" type="hidden" />
+                    <span asp-validation-for="NumReclamation" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="CodeFait" class="form-label"></label>
+                    <select asp-for="CodeFait" class="form-select"
+                            asp-items="@(new SelectList(Model.TypesFait, "CodeFait", "LibFait"))">
+                        <option value="">— Choisir —</option>
+                    </select>
+                </div>
+                <div class="col-12" id="blocPrecisionFait" hidden>
+                    <label asp-for="PrecisionFait" class="form-label"></label>
+                    <input asp-for="PrecisionFait" class="form-control" maxlength="250" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ---------- Patrimoine ---------- *@
+    <div class="card shadow-sm card-mh mb-4">
+        <div class="card-header h5 mb-0 p-0"><button type="button" class="btn-plier collapsed" data-bs-toggle="collapse" data-bs-target="#partiePatrimoine" aria-expanded="false" aria-controls="partiePatrimoine">Patrimoine</button></div>
+        <div class="card-body p-4 collapse" id="partiePatrimoine">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label asp-for="CodePartieCommune" class="form-label"></label>
+                    <select asp-for="CodePartieCommune" class="form-select"
+                            asp-items="@(new SelectList(Model.PartiesCommunes, "CodePartieCommune", "LibPartieCommune"))">
+                        <option value="">— Choisir —</option>
+                    </select>
+                    <span asp-validation-for="CodePartieCommune" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Secteur" class="form-label"></label>
+                    <select asp-for="Secteur" class="form-select"
+                            asp-items="@(new SelectList(Model.Secteurs))">
+                        <option value="">— Choisir —</option>
+                    </select>
+                    <span asp-validation-for="Secteur" class="text-danger"></span>
+                </div>
+                <div class="col-md-6" id="blocCite" hidden>
+                    <label asp-for="NumCite" class="form-label"></label>
+                    <select asp-for="NumCite" class="form-select"></select>
+                    <span asp-validation-for="NumCite" class="text-danger"></span>
+                </div>
+                <div class="col-md-6" id="blocRue" hidden>
+                    <label asp-for="CodeRue" class="form-label"></label>
+                    @* Le choix combine rue et numéro (valeur "codeRue|numRue") ; deux champs cachés envoient CodeRue et NumRue. *@
+                    <select id="adresseChoix" class="form-select"></select>
+                    <input asp-for="CodeRue" type="hidden" />
+                    <input asp-for="NumRue" type="hidden" />
+                    <span asp-validation-for="CodeRue" class="text-danger"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ---------- Période et commentaire ---------- *@
+    <div class="card shadow-sm card-mh mb-4">
+        <div class="card-header h5 mb-0 p-0"><button type="button" class="btn-plier collapsed" data-bs-toggle="collapse" data-bs-target="#partiePeriode" aria-expanded="false" aria-controls="partiePeriode">Période et commentaire</button></div>
+        <div class="card-body p-4 collapse" id="partiePeriode">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label asp-for="DateDeb" class="form-label"></label>
+                    <input asp-for="DateDeb" class="form-control" type="date" />
+                    <span asp-validation-for="DateDeb" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="DateFin" class="form-label"></label>
+                    <input asp-for="DateFin" class="form-control" type="date" />
+                    <span asp-validation-for="DateFin" class="text-danger"></span>
+                </div>
+            </div>
+            <div class="mt-3">
+                <label asp-for="Commentaire" class="form-label"></label>
+                <textarea asp-for="Commentaire" class="form-control" rows="4"></textarea>
+            </div>
+        </div>
+    </div>
+
+    @* ---------- Catégorie et détails ---------- *@
+    <div class="card shadow-sm card-mh mb-4">
+        <div class="card-header h5 mb-0 p-0"><button type="button" class="btn-plier collapsed" data-bs-toggle="collapse" data-bs-target="#partieDetails" aria-expanded="false" aria-controls="partieDetails">Détails</button></div>
+        <div class="card-body p-4 collapse" id="partieDetails">
+            <div class="mb-4">
+                <label asp-for="CodeCat" class="form-label"></label>
+                <select asp-for="CodeCat" class="form-select"
+                        asp-items="@(new SelectList(Model.Categories, "CodeCat", "LibCat"))">
+                    <option value="">— Choisir —</option>
+                </select>
+                <span asp-validation-for="CodeCat" class="text-danger"></span>
+            </div>
+
+            @* Liste des détails déjà ajoutés *@
+            <div class="table-responsive mb-3">
+                <table class="table table-sm align-middle" id="tableDetails">
+                    <thead>
+                        <tr>
+                            <th>Catégorie</th>
+                            <th>Sous-catégorie</th>
+                            <th>Nuisance</th>
+                            <th class="text-end">Coût (€)</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr id="aucunDetail"><td colspan="5" class="text-muted">Aucun détail ajouté.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            @* Mini-formulaire pour ajouter un détail (ses champs n'ont pas de "name" : ils ne sont pas envoyés tels quels) *@
+            <div class="border rounded p-3 bg-light" id="formDetail">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label" for="detCategorie">Catégorie</label>
+                        <input type="text" id="detCategorie" class="form-control" readonly placeholder="Choisir une catégorie plus haut" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label" for="detSousCat">Sous-catégorie</label>
+                        <select id="detSousCat" class="form-select" disabled></select>
+                    </div>
+                    <div class="col-md-3" id="blocNuisance" hidden>
+                        <label class="form-label" for="detNuisance">Nuisance</label>
+                        <select id="detNuisance" class="form-select"></select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label" for="detCout">Coût (€)</label>
+                        <input type="number" id="detCout" class="form-control" min="0" step="1" />
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" id="btnAjouterDetail" class="btn btn-mh w-100" disabled>Ajouter</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ---------- Pièces jointes ---------- *@
+    <div class="card shadow-sm card-mh mb-4">
+        <div class="card-header h5 mb-0 p-0"><button type="button" class="btn-plier collapsed" data-bs-toggle="collapse" data-bs-target="#partiePieces" aria-expanded="false" aria-controls="partiePieces">Pièces jointes</button></div>
+        <div class="card-body p-4 collapse" id="partiePieces">
+            <ul class="list-group mb-3" id="listePieces"></ul>
+            <div class="border rounded p-3 bg-light">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label" for="pjFichier">Fichier</label>
+                        <div id="zoneFichier">
+                            <input type="file" id="pjFichier" class="form-control"
+                                   accept=".pdf,.doc,.docx,.xls,.xlsx,.odt,.ods,.jpg,.jpeg,.png,.gif,.bmp,.webp,.tif,.tiff,.txt,.msg,.eml" />
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label" for="pjNature">Nature de la pièce</label>
+                        <select id="pjNature" class="form-select">
+                            <option value="">— Choisir —</option>
+                            @foreach (var n in Model.Natures)
+                            {
+                                <option value="@n.CodeNature">@n.LibNature</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3" id="blocPjPrecision" hidden>
+                        <label class="form-label" for="pjPrecision">Précision</label>
+                        <input type="text" id="pjPrecision" class="form-control" maxlength="100" />
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" id="btnAjouterPj" class="btn btn-mh w-100" disabled>Ajouter</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mb-5">
+        <a asp-action="Dossiers" class="btn btn-outline-secondary">Annuler</a>
+        <button type="submit" class="btn btn-mh">Enregistrer la plainte</button>
+    </div>
+</form>
+
+<partial name="_ValidationScriptsPartial" />
+
+<script type="application/json" id="donneesFormulaire">
+    @Html.Raw(Json.Serialize(new { cites = Model.Cites, sousCategories = Model.SousCategories, nuisances = Model.Nuisances }))
+</script>
+<script>
+(function () {
+    // Une partie fermée qui contient un champ invalide s'ouvre pour afficher l'erreur.
+    document.getElementById('formPlainte').addEventListener('invalid', e => {
+        const partie = e.target.closest('.collapse');
+        if (partie && !partie.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(partie).show();
+    }, true);
+
+    // ----- N° de réclamation : deux nombres reliés par un tiret -----
+    const recA = document.getElementById('reclamationA'), recB = document.getElementById('reclamationB');
+    const recTotal = document.getElementById('NumReclamation');
+    const [debutA, debutB] = (recTotal.value || '').split('-');
+    recA.value = debutA ?? ''; recB.value = debutB ?? '';
+    const majReclamation = () => recTotal.value = recA.value && recB.value ? `${recA.value}-${recB.value}` : '';
+    recA.addEventListener('input', majReclamation);
+    recB.addEventListener('input', majReclamation);
+
+    const donnees = JSON.parse(document.getElementById('donneesFormulaire').textContent);
+    const $ = id => document.getElementById(id);
+    const vide = '<option value="">— Choisir —</option>';
+    const remplir = (select, items, valeur, libelle) =>
+        select.innerHTML = vide + items.map(i => {
+            const o = document.createElement('option');
+            o.value = i[valeur]; o.textContent = i[libelle] ?? '';
+            return o.outerHTML;
+        }).join('');
+
+    // Code "Autre(s)" des tables type_fait et nature_piece : une précision est alors obligatoire.
+    const CODE_AUTRE = 'AUTR';
+    const typeFait = $('CodeFait'), precisionFait = $('PrecisionFait');
+    const majPrecisionFait = () => {
+        const autre = typeFait.value === CODE_AUTRE;
+        $('blocPrecisionFait').hidden = !autre;
+        precisionFait.required = autre;
+        if (!autre) precisionFait.value = '';
+    };
+    typeFait.addEventListener('change', majPrecisionFait);
+    majPrecisionFait();
+
+    // ----- Patrimoine : secteur -> cité -> adresse -----
+    const secteur = $('Secteur'), cite = $('NumCite'), rue = $('adresseChoix');
+    secteur.addEventListener('change', () => {
+        rue.innerHTML = ''; $('blocRue').hidden = true;
+        const cites = donnees.cites.filter(c => c.secteur === secteur.value);
+        $('blocCite').hidden = !secteur.value;
+        remplir(cite, cites, 'numCite', 'libCite');
+    });
+    cite.addEventListener('change', async () => {
+        $('blocRue').hidden = !cite.value;
+        rue.innerHTML = vide;
+        if (!cite.value) return;
+        const reponse = await fetch('@Url.Action("RuesParCite", "Dossier")?numCite=' + encodeURIComponent(cite.value));
+        if (!reponse.ok) return;
+        remplir(rue, await reponse.json(), 'valeur', 'libelle');
+    });
+
+    rue.addEventListener('change', () => {
+        const [codeRue, numRue] = rue.value.split('|');
+        $('CodeRue').value = codeRue ?? '';
+        $('NumRue').value = numRue ?? '';
+    });
+
+    // ----- Détails : catégorie -> sous-catégorie -> nuisance -----
+    const categorie = $('CodeCat'), sousCat = $('detSousCat'), nuisance = $('detNuisance');
+    const cout = $('detCout'), btnDetail = $('btnAjouterDetail');
+    const majBoutonDetail = () => btnDetail.disabled = !(sousCat.value && nuisance.value);
+    const reinitDetail = () => {
+        nuisance.innerHTML = ''; $('blocNuisance').hidden = true;
+        cout.value = ''; majBoutonDetail();
+    };
+    categorie.addEventListener('change', () => {
+        $('detCategorie').value = categorie.value ? categorie.selectedOptions[0].textContent : '';
+        remplir(sousCat, donnees.sousCategories.filter(s => s.codeCat === categorie.value), 'codeSousCat', 'libSousCat');
+        sousCat.disabled = !categorie.value;
+        reinitDetail();
+    });
+    sousCat.addEventListener('change', () => {
+        nuisance.innerHTML = '';
+        $('blocNuisance').hidden = !sousCat.value;
+        remplir(nuisance, donnees.nuisances.filter(n => n.codeSousCat === sousCat.value), 'codeNuisance', 'libNuisance');
+        majBoutonDetail();
+    });
+    nuisance.addEventListener('change', majBoutonDetail);
+
+    const corps = $('tableDetails').tBodies[0];
+    const reindexerDetails = () => {
+        const lignes = [...corps.querySelectorAll('tr[data-detail]')];
+        lignes.forEach((tr, i) => tr.querySelectorAll('input[type=hidden]').forEach(h =>
+            h.name = `Details[${i}].${h.dataset.champ}`));
+        $('aucunDetail').hidden = lignes.length > 0;
+    };
+    btnDetail.addEventListener('click', () => {
+        const tr = document.createElement('tr');
+        tr.dataset.detail = '1';
+        const cellule = (texte) => { const td = document.createElement('td'); td.textContent = texte; return td; };
+        const cacher = (champ, valeur) => {
+            const h = document.createElement('input');
+            h.type = 'hidden'; h.dataset.champ = champ; h.value = valeur; return h;
+        };
+        tr.append(cellule($('detCategorie').value),
+                  cellule(sousCat.selectedOptions[0].textContent),
+                  cellule(nuisance.selectedOptions[0].textContent),
+                  cellule(cout.value));
+        tr.children[3].className = 'text-end';
+        tr.children[0].append(cacher('CodeSousCat', sousCat.value), cacher('CodeNuisance', nuisance.value), cacher('Cout', cout.value));
+        const tdSuppr = document.createElement('td');
+        tdSuppr.className = 'text-end';
+        const bouton = document.createElement('button');
+        bouton.type = 'button'; bouton.className = 'btn btn-sm btn-outline-danger'; bouton.textContent = 'Retirer';
+        bouton.addEventListener('click', () => { tr.remove(); reindexerDetails(); });
+        tdSuppr.append(bouton); tr.append(tdSuppr);
+        corps.append(tr);
+        reindexerDetails();
+        // Le formulaire reste disponible pour un autre détail : on garde la catégorie, on vide le reste.
+        sousCat.value = ''; reinitDetail();
+    });
+
+    // ----- Pièces jointes -----
+    let fichier = $('pjFichier');
+    const nature = $('pjNature'), precision = $('pjPrecision'), btnPj = $('btnAjouterPj');
+    const liste = $('listePieces');
+    const natureAutre = () => nature.value === CODE_AUTRE;
+    const majBoutonPj = () => {
+        $('blocPjPrecision').hidden = !natureAutre();
+        btnPj.disabled = !(fichier.files.length && nature.value && (!natureAutre() || precision.value.trim()));
+    };
+    precision.addEventListener('input', majBoutonPj);
+    fichier.addEventListener('change', majBoutonPj);
+    nature.addEventListener('change', majBoutonPj);
+    const reindexerPieces = () => [...liste.children].forEach((li, i) => {
+        li.querySelector('input[type=file]').name = `Pieces[${i}].Fichier`;
+        li.querySelectorAll('input[type=hidden]').forEach(h => h.name = `Pieces[${i}].${h.dataset.champ}`);
+    });
+    btnPj.addEventListener('click', () => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        const texte = document.createElement('span');
+        texte.textContent = `${fichier.files[0].name} — ${nature.selectedOptions[0].textContent}` +
+                            (natureAutre() && precision.value ? ` (${precision.value})` : '');
+        const cacher = (champ, valeur) => {
+            const h = document.createElement('input');
+            h.type = 'hidden'; h.dataset.champ = champ; h.value = valeur; return h;
+        };
+        // On déplace le champ fichier dans la liste (pour qu'il soit envoyé) et on en remet un vierge.
+        const ancien = fichier.cloneNode(true);
+        ancien.value = '';
+        fichier.hidden = true; fichier.removeAttribute('id');
+        li.append(texte, fichier, cacher('CodeNature', nature.value), cacher('PrecisionNature', natureAutre() ? precision.value.trim() : ''));
+        const bouton = document.createElement('button');
+        bouton.type = 'button'; bouton.className = 'btn btn-sm btn-outline-danger'; bouton.textContent = 'Retirer';
+        bouton.addEventListener('click', () => { li.remove(); reindexerPieces(); });
+        li.append(bouton);
+        liste.append(li);
+        $('zoneFichier').append(ancien);
+        ancien.id = 'pjFichier';
+        ancien.addEventListener('change', majBoutonPj);
+        fichier = ancien;
+        reindexerPieces();
+        nature.value = ''; precision.value = ''; $('blocPjPrecision').hidden = true;
+        btnPj.disabled = true;
+    });
+})();
+</script>

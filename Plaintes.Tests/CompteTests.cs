@@ -20,24 +20,5 @@ namespace Plaintes.Tests
         {
             Assert.Equal(attendu, new CompteViewModel { Droit = lettre }.DroitLibelle);
         }
-
-        [Fact]
-        public void Index_AfficheNomEmailEtDroitsDeLUtilisateurConnecte()
-        {
-            var controller = AccountControllerTests.CreerController();
-            controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.Name, "Dupont Jean"),
-                new Claim(ClaimTypes.Email, "jean.dupont@test.fr"),
-                new Claim(ClaimTypes.Role, "A"),
-            }, "test"));
-
-            var view = Assert.IsType<ViewResult>(controller.Index());
-
-            var model = Assert.IsType<CompteViewModel>(view.Model);
-            Assert.Equal("Dupont Jean", model.Nom);
-            Assert.Equal("jean.dupont@test.fr", model.Email);
-            Assert.Equal("Administrateur", model.DroitLibelle);
-        }
     }
 }

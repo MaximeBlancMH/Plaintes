@@ -25,8 +25,6 @@ public partial class Plainte
 
     public bool Suppr { get; set; }
 
-    public string NumEntree { get; set; } = null!;
-
     public int CodeRue { get; set; }
 
     public string CodEtat { get; set; } = null!;
@@ -66,7 +64,6 @@ public class PlainteFiltres
     public string? cite { get; set; }
     public string? rue { get; set; }
     public string? partieCommune { get; set; }
-    public string? entree { get; set; }
     public string? reclamation { get; set; }
     public string? categorie { get; set; }
     public string? sousCategorie { get; set; }

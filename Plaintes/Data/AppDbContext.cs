@@ -14,6 +14,8 @@ namespace Plaintes.Data
 
         public virtual DbSet<Batiment> Batiments { get; set; }
 
+        public virtual DbSet<BatimentRue> BatimentRues { get; set; }
+
         public virtual DbSet<Categorie> Categories { get; set; }
 
         public virtual DbSet<Cite> Cites { get; set; }
@@ -21,8 +23,6 @@ namespace Plaintes.Data
         public virtual DbSet<Composer> Composers { get; set; }
 
         public virtual DbSet<Dico> Dicos { get; set; }
-
-        public virtual DbSet<Entree> Entrees { get; set; }
 
         public virtual DbSet<Etat> Etats { get; set; }
 
@@ -37,8 +37,6 @@ namespace Plaintes.Data
         public virtual DbSet<Rue> Rues { get; set; }
 
         public virtual DbSet<SousCategorie> SousCategories { get; set; }
-
-        public virtual DbSet<Tranche> Tranches { get; set; }
 
         public virtual DbSet<Utilisateur> Utilisateurs { get; set; }
         public virtual DbSet<TypeFait> TypeFaits { get; set; }
@@ -55,35 +53,56 @@ namespace Plaintes.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+
             modelBuilder.Entity<Batiment>(entity =>
             {
                 entity.HasKey(e => e.IdBat).HasName("PK_Batiment");
 
                 entity.ToTable("batiment");
 
-                entity.HasIndex(e => new { e.IdTranche, e.NumBat }, "UQ_Batiment_Tranche_NumBat").IsUnique();
-
                 entity.Property(e => e.IdBat).HasColumnName("IDBAT");
-                entity.Property(e => e.IdTranche).HasColumnName("IDTRANCHE");
-                entity.Property(e => e.LibBat)
-                    .HasMaxLength(50)
-                    .IsUnicode(false)
-                    .HasColumnName("LIBBAT");
+                entity.Property(e => e.NumCite).HasColumnName("NUMCITE");
                 entity.Property(e => e.NumBat)
                     .HasMaxLength(11)
                     .IsUnicode(false)
                     .HasColumnName("NUMBAT");
-                entity.Property(e => e.NumCite).HasColumnName("NUMCITE");
-
-                entity.HasOne(d => d.IdTrancheNavigation).WithMany(p => p.Batiments)
-                    .HasForeignKey(d => d.IdTranche)
-                    .OnDelete(DeleteBehavior.ClientSetNull)
-                    .HasConstraintName("FK_Batiment_Tranche");
+                entity.Property(e => e.LibBat)
+                    .HasMaxLength(50)
+                    .IsUnicode(false)
+                    .HasColumnName("LIBBAT");
+                entity.Property(e => e.CodeTranche)
+                    .HasMaxLength(5)
+                    .IsUnicode(false)
+                    .HasColumnName("CODETRANCHE");
 
                 entity.HasOne(d => d.NumCiteNavigation).WithMany(p => p.Batiments)
                     .HasForeignKey(d => d.NumCite)
                     .OnDelete(DeleteBehavior.ClientSetNull)
                     .HasConstraintName("FK_Batiment_Cite");
+            });
+
+            modelBuilder.Entity<BatimentRue>(entity =>
+            {
+                entity.HasKey(e => new { e.IdBat, e.CodeRue, e.NumRue }).HasName("PK_BatimentRue");
+
+                entity.ToTable("batiment_rue");
+
+                entity.Property(e => e.IdBat).HasColumnName("IDBAT");
+                entity.Property(e => e.CodeRue).HasColumnName("CODERUE");
+                entity.Property(e => e.NumRue)
+                    .HasMaxLength(50)
+                    .IsUnicode(false)
+                    .HasColumnName("NUMRUE");
+
+                entity.HasOne(d => d.IdBatNavigation).WithMany(p => p.BatimentRues)
+                    .HasForeignKey(d => d.IdBat)
+                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .HasConstraintName("FK_BatimentRue_Batiment");
+
+                entity.HasOne(d => d.CodeRueNavigation).WithMany(p => p.BatimentRues)
+                    .HasForeignKey(d => d.CodeRue)
+                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .HasConstraintName("FK_BatimentRue_Rue");
             });
 
             modelBuilder.Entity<Categorie>(entity =>
@@ -120,6 +139,17 @@ namespace Plaintes.Data
                     .HasMaxLength(10)
                     .IsUnicode(false)
                     .HasColumnName("SECTEUR");
+
+                // Table de liaison cite_rue : les rues desservies par chaque cité.
+                entity.HasMany(d => d.Rues).WithMany(p => p.Cites)
+                    .UsingEntity<Dictionary<string, object>>("cite_rue",
+                        r => r.HasOne<Rue>().WithMany().HasForeignKey("CODERUE").HasConstraintName("FK_CiteRue_Rue"),
+                        l => l.HasOne<Cite>().WithMany().HasForeignKey("NUMCITE").HasConstraintName("FK_CiteRue_Cite"),
+                        j =>
+                        {
+                            j.HasKey("NUMCITE", "CODERUE").HasName("PK_CiteRue");
+                            j.ToTable("cite_rue");
+                        });
             });
 
             modelBuilder.Entity<Composer>(entity =>
@@ -169,35 +199,6 @@ namespace Plaintes.Data
                     .HasMaxLength(20)
                     .IsUnicode(false)
                     .HasColumnName("nomtable");
-            });
-
-            modelBuilder.Entity<Entree>(entity =>
-            {
-                entity.HasKey(e => e.IdEntree).HasName("PK_Entree");
-
-                entity.ToTable("entree");
-
-                entity.HasIndex(e => new { e.IdBat, e.NumEntree }, "UQ_Entree_Bat_NumEntree").IsUnique();
-
-                entity.Property(e => e.IdEntree).HasColumnName("IDENTREE");
-                entity.Property(e => e.CodeRue).HasColumnName("CODERUE");
-                entity.Property(e => e.IdBat).HasColumnName("IDBAT");
-                entity.Property(e => e.NumEntree)
-                    .HasMaxLength(11)
-                    .IsUnicode(false)
-                    .HasColumnName("NUMENTREE");
-                entity.Property(e => e.NumRue)
-                    .HasMaxLength(50)
-                    .IsUnicode(false)
-                    .HasColumnName("NUMRUE");
-
-                entity.HasOne(d => d.CodeRueNavigation).WithMany(p => p.Entrees)
-                    .HasForeignKey(d => d.CodeRue)
-                    .HasConstraintName("FK_Entree_Rue");
-
-                entity.HasOne(d => d.IdBatNavigation).WithMany(p => p.Entrees)
-                    .HasForeignKey(d => d.IdBat)
-                    .HasConstraintName("FK_Entree_Batiment");
             });
 
             modelBuilder.Entity<Etat>(entity =>
@@ -291,6 +292,8 @@ namespace Plaintes.Data
 
                 entity.Property(e => e.CodeNature).HasMaxLength(4).IsUnicode(false).HasColumnName("CODENATURE");
                 entity.Property(e => e.PrecisionNature).HasMaxLength(100).IsUnicode(false).HasColumnName("PRECISIONNATURE");
+                entity.Property(x => x.CheminPiece).HasMaxLength(500).IsUnicode(false).HasColumnName("CHEMINPIECE");
+                entity.Property(x => x.HashPiece).HasMaxLength(64).IsFixedLength().IsUnicode(false).HasColumnName("HASHPIECE");
 
                 entity.HasOne(d => d.CodeNatureNavigation).WithMany(p => p.PieceJointes)
                     .HasForeignKey(d => d.CodeNature)
@@ -328,10 +331,6 @@ namespace Plaintes.Data
                 entity.Property(e => e.DateDeb).HasColumnName("DATEDEB");
                 entity.Property(e => e.DateFin).HasColumnName("DATEFIN");
                 entity.Property(e => e.NumCite).HasColumnName("NUMCITE");
-                entity.Property(e => e.NumEntree)
-                    .HasMaxLength(11)
-                    .IsUnicode(false)
-                    .HasColumnName("NUMENTREE");
                 entity.Property(e => e.NumReclamation)
                     .HasMaxLength(12)
                     .IsUnicode(false)
@@ -341,8 +340,8 @@ namespace Plaintes.Data
                     .IsUnicode(false)
                     .HasColumnName("NUMRUE");
                 entity.Property(e => e.Suppr).HasColumnName("SUPPR");
-                entity.Property(e => e.DateCreation).HasColumnName("DATECREATION");
-                entity.Property(e => e.DateModification).HasColumnName("DATEMODIF");
+                entity.Property(e => e.DateCreation).HasColumnName("DATECREATION").HasDefaultValueSql("getdate()");
+                entity.Property(e => e.DateModification).HasColumnName("DATEMODIF").HasDefaultValueSql("getdate()");
 
                 entity.HasOne(d => d.CodeCatNavigation).WithMany(p => p.Plaintes)
                     .HasForeignKey(d => d.CodeCat)
@@ -425,30 +424,6 @@ namespace Plaintes.Data
                     .HasConstraintName("FK_SousCategorie_Categorie");
             });
 
-            modelBuilder.Entity<Tranche>(entity =>
-            {
-                entity.HasKey(e => e.IdTranche).HasName("PK_Tranche");
-
-                entity.ToTable("tranche");
-
-                entity.HasIndex(e => new { e.NumCite, e.CodeTranche }, "UQ_Tranche_Cite_Code").IsUnique();
-
-                entity.Property(e => e.IdTranche).HasColumnName("IDTRANCHE");
-                entity.Property(e => e.CodeTranche)
-                    .HasMaxLength(5)
-                    .IsUnicode(false)
-                    .HasColumnName("CODETRANCHE");
-                entity.Property(e => e.LibTranche)
-                    .HasMaxLength(100)
-                    .IsUnicode(false)
-                    .HasColumnName("LIBTRANCHE");
-                entity.Property(e => e.NumCite).HasColumnName("NUMCITE");
-
-                entity.HasOne(d => d.NumCiteNavigation).WithMany(p => p.Tranches)
-                    .HasForeignKey(d => d.NumCite)
-                    .OnDelete(DeleteBehavior.ClientSetNull)
-                    .HasConstraintName("FK_Tranche_Cite");
-            });
 
             modelBuilder.Entity<Utilisateur>(entity =>
             {
@@ -473,7 +448,7 @@ namespace Plaintes.Data
 
             modelBuilder.Entity<TypeFait>(entity =>
             {
-                entity.ToTable("typefait");
+                entity.ToTable("type_fait");
                 entity.HasKey(e => e.CodeFait).HasName("PK_TypeFait");
                 entity.Property(e => e.CodeFait).HasMaxLength(4).IsUnicode(false).HasColumnName("CODEFAIT");
                 entity.Property(e => e.LibFait).HasMaxLength(100).IsUnicode(false).HasColumnName("LIBFAIT");
@@ -481,7 +456,7 @@ namespace Plaintes.Data
 
             modelBuilder.Entity<NaturePiece>(entity =>
             {
-                entity.ToTable("naturepiece");
+                entity.ToTable("nature_piece");
                 entity.HasKey(e => e.CodeNature).HasName("PK_NaturePiece");
                 entity.Property(e => e.CodeNature).HasMaxLength(4).IsUnicode(false).HasColumnName("CODENATURE");
                 entity.Property(e => e.LibNature).HasMaxLength(50).IsUnicode(false).HasColumnName("LIBNATURE");

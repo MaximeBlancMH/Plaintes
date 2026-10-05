@@ -27,7 +27,6 @@
     string fCite = q["cite"].ToString();
     string fRue = q["rue"].ToString();
     string fPartieCommune = q["partieCommune"].ToString();
-    string fEntree = q["entree"].ToString();
     string fReclamation = q["reclamation"].ToString();
     string fCategorie = q["categorie"].ToString();
     string fSousCategorie = q["sousCategorie"].ToString();
@@ -51,7 +50,6 @@
         ["cite"] = string.IsNullOrWhiteSpace(fCite) ? null : fCite,
         ["rue"] = string.IsNullOrWhiteSpace(fRue) ? null : fRue,
         ["partieCommune"] = string.IsNullOrWhiteSpace(fPartieCommune) ? null : fPartieCommune,
-        ["entree"] = string.IsNullOrWhiteSpace(fEntree) ? null : fEntree,
         ["reclamation"] = string.IsNullOrWhiteSpace(fReclamation) ? null : fReclamation,
         ["categorie"] = string.IsNullOrEmpty(fCategorie) ? null : fCategorie,
         ["sousCategorie"] = string.IsNullOrEmpty(fSousCategorie) ? null : fSousCategorie,
@@ -225,10 +223,6 @@
                 <input type="text" class="form-control" id="partieCommune" name="partieCommune" value="@fPartieCommune" />
             </div>
             <div class="mb-3">
-                <label for="entree" class="form-label fw-semibold">Entrée</label>
-                <input type="text" class="form-control" id="entree" name="entree" value="@fEntree" />
-            </div>
-            <div class="mb-3">
                 <label for="reclamation" class="form-label fw-semibold">N° de réclamation</label>
                 <input type="text" class="form-control" id="reclamation" name="reclamation" value="@fReclamation" />
             </div>
@@ -345,7 +339,6 @@
                         <th scope="col" aria-sort="@AriaTri("reclamation")"><a class="text-reset text-decoration-none" href="@LienTri("reclamation")">N° réclamation<span>@Fleche("reclamation")</span></a></th>
                         <th scope="col">Commentaire</th>
                         <th scope="col" aria-sort="@AriaTri("categorie")"><a class="text-reset text-decoration-none" href="@LienTri("categorie")">Catégorie<span>@Fleche("categorie")</span></a></th>
-                        @* Le tri de la colonne Détails se fait sur le coût (clé "cout" dans AppliquerTri) *@
                         <th scope="col" aria-sort="@AriaTri("cout")"><a class="text-reset text-decoration-none" href="@LienTri("cout")">Détail(s)<span>@Fleche("cout")</span><br /><small class="fw-normal">Sous-catégorie / Nuisance / Coût</small></a></th>
                         <th scope="col">Pièce(s) jointe(s)</th>
                         <th scope="col">Actions</th>
@@ -372,10 +365,6 @@
                                 {
                                     <div>@ligneRue</div>
                                 }
-                                @if (!string.IsNullOrWhiteSpace(p.NumEntree))
-                                {
-                                    <div class="text-muted small">Entrée @p.NumEntree</div>
-                                }
                             </td>
                             <td>@(p.CodePartieCommuneNavigation?.LibPartieCommune)</td>
                             <td class="text-nowrap">
@@ -390,6 +379,7 @@
                                 }
                             </td>
                             <td>@(p.CodeCatNavigation?.LibCat)</td>
+                            @* Colonne des détails *@
                             <td class="cell-details">
                                 @if (details.Count > 0)
                                 {
@@ -409,8 +399,7 @@
                                     </ul>
                                 }
                             </td>
-                            @* Colonne 11 : pièces jointes. Chaque nom est un lien qui ouvre le fichier
-                               dans un nouvel onglet, via l'action HomeController.PieceJointeFichier. *@
+                            @* Colonne qui liste les pièces jointes *@
                             <td class="cell-pj">
                                 @if (p.PieceJointes.Count > 0)
                                 {
@@ -418,10 +407,6 @@
                                         @foreach (var pj in p.PieceJointes.OrderBy(x => x.NumPiece))
                                         {
                                             <li>
-                                                @* Url.Action fabrique l'adresse du lien à partir du nom de l'action, du contrôleur et de l'id.
-                                                   rel="noopener" est une protection de sécurité pour les liens en nouvel onglet.
-                                                   title = infobulle avec le type et la taille du fichier.
-                                                   Texte du lien = nom du fichier, ou "Pièce N" si le nom est vide. *@
                                                 <a href="@Url.Action("PieceJointeFichier", "Dossier", new { id = pj.NumPiece })"
                                                    target="_blank" rel="noopener"
                                                    title="@pj.TypePiece – @pj.TaillePiece">@(string.IsNullOrWhiteSpace(pj.LibPiece) ? $"Pièce {pj.NumPiece}" : pj.LibPiece)</a>
@@ -430,11 +415,7 @@
                                     </ul>
                                 }
                             </td>
-                            @* Colonne 12 : boutons d'action.
-                               Modifier et Télécharger sont des liens vers /Dossiers/{id}/update et /Dossiers/{id}/download.
-                               Supprimer ouvre le modal de confirmation : "data-url" contient l'adresse /Dossiers/{id}/delete
-                               où le formulaire du modal enverra son POST, "data-id" le n° de plainte et
-                               "data-resume" le nom de la cité, affiché dans le modal. *@
+                            @* Colonne des actions avec modifier, télécharger et supprimer *@
                             <td class="cell-actions">
                                 <div class="d-flex flex-column gap-1">
                                     <a class="btn btn-sm btn-outline-mh" href="@Url.Content($"~/Dossiers/{p.NumPlainte}/update")">Modifier</a>
@@ -444,8 +425,6 @@
                             </td>
                         </tr>
                     }
-                    @* Ligne affichée uniquement quand la page ne contient aucun dossier. Sinon l'attribut "hidden" la masque.
-                       colspan="12" : la cellule occupe les 12 colonnes du tableau. *@
                     <tr id="rowVide" @(dossiers.Count > 0 ? "hidden" : "")>
                         <td colspan="12" class="text-center text-muted py-4">Aucun dossier à afficher.</td>
                     </tr>
@@ -453,7 +432,7 @@
             </table>
         </div>
 
-        @* Pagination du bas (gabarit "pagination" défini en haut de la page) *@
+        @* Pagination du bas *@
         @pagination("mt-3")
     </div>
 </div>
@@ -472,7 +451,6 @@
         // Bloc colonnes : afficher / masquer les colonnes du tableau
         // Une feuille de style dynamique masque la Nième colonne (en-tête + cellules) ;
         // la ligne "Aucun dossier" (#rowVide) est exclue car elle n'a qu'une seule cellule.
-        // Le choix est mémorisé dans le navigateur (localStorage).
         // ====================================================================
         (function () {
             const CLE = 'dossiers.colonnesMasquees';
@@ -548,7 +526,7 @@
             }
             // À l'envoi, on désactive les champs vides ou laissés à leur valeur par défaut :
             // un champ désactivé n'est pas envoyé, donc l'adresse ne contient que les filtres remplis
-            // (ex. /Dossiers?rue=Jaures&coutMax=2000 au lieu de ...?cite=&rue=Jaures&entree=&...).
+            // (ex. /Dossiers?rue=Jaures&coutMax=2000 au lieu de ...?cite=&rue=Jaures&...).
             document.getElementById('formFiltres').addEventListener('submit', function () {
                 this.querySelectorAll('input[type=text], input[type=number], select').forEach(function (champ) {
                     if (champ.value.trim() === '') champ.disabled = true;

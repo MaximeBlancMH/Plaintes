@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Plaintes.Data;
 using Plaintes.Services;
 using Plaintes.Services.IServices;
+using Plaintes.Services.Stockage;
 using Serilog;
 using Sustainsys.Saml2;
 using Sustainsys.Saml2.AspNetCore2;
@@ -19,6 +21,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IUtilisateurSrv, UtilisateurSrv>();
 builder.Services.AddScoped<IPlainteSrv, PlainteSrv>();
+builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = 25 * 1024 * 1024);
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 25 * 1024 * 1024);
 
 builder.Host.UseSerilog((ctx, lc) => lc.MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
@@ -26,6 +30,9 @@ builder.Host.UseSerilog((ctx, lc) => lc.MinimumLevel.Information()
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 30)
     );
+
+builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
+builder.Services.AddSingleton<IPieceStorage, FileSystemPieceStorage>();
 
 builder.Services.AddAuthentication(opt =>
 {
@@ -100,6 +107,18 @@ builder.Services.AddAuthentication(opt =>
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
+
+try
+{
+    var storage = app.Services.GetRequiredService<IPieceStorage>();
+    await storage.CheckAsync();
+    app.Logger.LogInformation("Stockage des pièces jointes opérationnel");
+}
+catch (Exception ex)
+{
+    app.Logger.LogCritical(ex, "Stockage des pièces jointes inutilisable");
+    throw;      // l'appli refuse de démarrer
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

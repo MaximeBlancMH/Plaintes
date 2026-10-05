@@ -5,6 +5,8 @@ using Plaintes.Controllers;
 using Plaintes.Data;
 using Plaintes.Models;
 using Plaintes.Services.IServices;
+using Plaintes.Services.Stockage;
+using Microsoft.Extensions.Options;
 
 namespace Plaintes.Tests
 {
@@ -13,16 +15,24 @@ namespace Plaintes.Tests
         private readonly AppDbContext _ctx = TestDb.Creer();
         private readonly FakePlainteSrv _srv = new();
         private readonly DossierController _controller;
+        private readonly string _racine = Path.Combine(Path.GetTempPath(), "plaintes-tests-" + Guid.NewGuid());
+        private readonly FileSystemPieceStorage _storage;
 
         public DossierControllerTests()
         {
-            _controller = new DossierController(NullLogger<DossierController>.Instance, _ctx, _srv)
+            _storage = new FileSystemPieceStorage(
+                Options.Create(new StorageSettings { Racine = _racine, Extensions = new[] { ".pdf", ".png", ".docx" } }), new FakeEnv());
+            _controller = new DossierController(NullLogger<DossierController>.Instance, _ctx, _srv, _storage)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
             };
         }
 
-        public void Dispose() => _ctx.Dispose();
+        public void Dispose()
+        {
+            _ctx.Dispose();
+            if (Directory.Exists(_racine)) Directory.Delete(_racine, true);
+        }
 
         /// <summary>Faux service : mémorise les paramètres reçus et renvoie un résultat prédéfini.</summary>
         private sealed class FakePlainteSrv : IPlainteSrv
@@ -51,6 +61,10 @@ namespace Plaintes.Tests
             public Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs) => Task.FromResult(new byte[0]);
             
             public Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte) => Task.FromResult(new Dictionary<string, string>());
+        
+            public Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail) => Task.FromResult(true);
+            public Task<string?> validerPlainte(CreatePlainteViewModel model) => Task.FromResult<string?>(null);
+            public Task AddPiecesAsync(int numPlainte, IEnumerable<PieceJointeViewModel> pieces, CancellationToken ct = default) => Task.CompletedTask;
         }
 
         // ---------- Dossiers ----------
@@ -141,12 +155,11 @@ namespace Plaintes.Tests
         }
 
         [Theory]
-        [InlineData("application/pdf", "inline")]
-        [InlineData("image/png", "inline")]
-        [InlineData("IMAGE/JPEG", "inline")]
-        [InlineData("application/zip", "attachment")]
-        [InlineData("text/html", "attachment")]
-        public async Task PieceJointeFichier_AfficheDansLeNavigateurSeulementPdfEtImages(string type, string disposition)
+        [InlineData("application/pdf")]
+        [InlineData("image/png")]
+        [InlineData("application/zip")]
+        [InlineData("text/html")]
+        public async Task PieceJointeFichier_AnciennePiece_EstToujoursTelechargee(string type)
         {
             var contenu = new byte[] { 1, 2, 3 };
             await AjouterPiece(new PieceJointe { NumPiece = 1, NumPlainte = 1, LibPiece = "fichier.ext", TypePiece = type, TaillePiece = "3", Fichier = contenu });
@@ -154,7 +167,7 @@ namespace Plaintes.Tests
             var result = Assert.IsType<FileContentResult>(await _controller.PieceJointeFichier(1));
 
             Assert.Equal(contenu, result.FileContents);
-            Assert.StartsWith(disposition + ";", _controller.Response.Headers.ContentDisposition.ToString());
+            Assert.StartsWith("attachment;", _controller.Response.Headers.ContentDisposition.ToString());
             Assert.Equal("nosniff", _controller.Response.Headers.XContentTypeOptions.ToString());
         }
 
@@ -176,7 +189,7 @@ namespace Plaintes.Tests
 
             await _controller.PieceJointeFichier(1);
 
-            Assert.Equal("inline; filename*=UTF-8''rapport%20%C3%A9t%C3%A9.pdf", _controller.Response.Headers.ContentDisposition.ToString());
+            Assert.Equal("attachment; filename*=UTF-8''rapport%20%C3%A9t%C3%A9.pdf", _controller.Response.Headers.ContentDisposition.ToString());
         }
 
         [Fact]
@@ -187,6 +200,48 @@ namespace Plaintes.Tests
             await _controller.PieceJointeFichier(42);
 
             Assert.Contains("piece-42", _controller.Response.Headers.ContentDisposition.ToString());
+        }
+
+        // Nouvelles pièces : fichier sur disque (CheminPiece).
+        private async Task<PieceJointe> AjouterPieceSurDisque(string nom, int numPiece = 1)
+        {
+            var stocke = await _storage.SaveAsync(new MemoryStream(new byte[] { 1, 2, 3 }), nom, 1);
+            var pj = new PieceJointe { NumPiece = numPiece, NumPlainte = 1, LibPiece = nom, TypePiece = "x", TaillePiece = "3 o", CheminPiece = stocke.RelativePath, HashPiece = stocke.Sha256 };
+            await AjouterPiece(pj);
+            return pj;
+        }
+
+        [Theory]
+        [InlineData("facture.pdf", "application/pdf", "inline")]
+        [InlineData("photo.png", "image/png", "inline")]
+        [InlineData("courrier.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "attachment")]
+        public async Task PieceJointeFichier_NouvellePiece_SeLitSurLeDisque(string nom, string type, string disposition)
+        {
+            await AjouterPieceSurDisque(nom);
+
+            var result = Assert.IsType<FileStreamResult>(await _controller.PieceJointeFichier(1));
+            await using var flux = result.FileStream;
+
+            Assert.Equal(type, result.ContentType);
+            Assert.Equal(3, flux.Length);
+            Assert.StartsWith(disposition + ";", _controller.Response.Headers.ContentDisposition.ToString());
+        }
+
+        [Fact]
+        public async Task PieceJointeFichier_NouvellePiece_FichierAbsentDuDisque_RenvoieNotFound()
+        {
+            var pj = await AjouterPieceSurDisque("a.pdf");
+            File.Delete(Path.Combine(_racine, pj.CheminPiece!));
+
+            Assert.IsType<NotFoundResult>(await _controller.PieceJointeFichier(1));
+        }
+
+        [Fact]
+        public async Task PieceJointeFichier_CheminHorsRacine_RenvoieNotFound()
+        {
+            await AjouterPiece(new PieceJointe { NumPiece = 1, NumPlainte = 1, LibPiece = "a.pdf", TypePiece = "x", TaillePiece = "1", CheminPiece = "../../etc/passwd" });
+
+            Assert.IsType<NotFoundResult>(await _controller.PieceJointeFichier(1));
         }
     }
 }

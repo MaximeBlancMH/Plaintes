@@ -1,9 +1,12 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Plaintes.Data;
 using Plaintes.Models;
 using Plaintes.Services.IServices;
+using Plaintes.Services.Stockage;
+using System.Security.Claims;
 
 namespace Plaintes.Controllers
 {
@@ -13,12 +16,14 @@ namespace Plaintes.Controllers
         private readonly ILogger<DossierController> _logger;
         private readonly AppDbContext _context;
         private readonly IPlainteSrv _plainteSrv;
+        private readonly IPieceStorage _storage;
 
-        public DossierController(ILogger<DossierController> logger, AppDbContext context, IPlainteSrv plainteSrv)
+        public DossierController(ILogger<DossierController> logger, AppDbContext context, IPlainteSrv plainteSrv, IPieceStorage storage)
         {
             _logger = logger;
             _context = context;
             _plainteSrv = plainteSrv;
+            _storage = storage;
         }
 
         [Authorize]
@@ -54,6 +59,94 @@ namespace Plaintes.Controllers
         }
 
         [Authorize]
+        [HttpGet("Creer")]
+        public async Task<IActionResult> Saisie()
+        {
+            var model = new CreatePlainteViewModel();
+            await RemplirListes(model);
+            // La vue garde le nom CreatePlainte.cshtml.
+            return View("CreatePlainte", model);
+        }
+
+        [Authorize]
+        [HttpPost("Creer")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create(CreatePlainteViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                // Première erreur de saisie (champ obligatoire, format...) affichée au-dessus du formulaire.
+                model.Erreur = ModelState.Values.SelectMany(v => v.Errors)
+                    .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Une valeur saisie est invalide." : e.ErrorMessage)
+                    .First();
+            }
+            else
+            {
+                try
+                {
+                    // On contrôle la conformité des champs avec la base avant d'enregistrer.
+                    model.Erreur = await _plainteSrv.validerPlainte(model);
+                    if (model.Erreur == null)
+                    {
+                        string userEmail = User.FindFirstValue(ClaimTypes.Email) ?? throw new InvalidOperationException("Utilisateur non authentifié.");
+                        bool result = await _plainteSrv.createPlainte(model, userEmail);
+                        if (result)
+                        {
+                            return RedirectToAction(nameof(Dossiers));
+                        }
+                        model.Erreur = "La plainte n'a pas pu être enregistrée.";
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    ModelState.AddModelError(string.Empty, ex.Message);
+                    await RemplirListes(model);
+                    return View("CreatePlainte", model);
+                }
+            }
+
+            // Les listes de choix ne sont pas envoyées par le formulaire : on les recharge avant de réafficher la page.
+            await RemplirListes(model);
+            return View("CreatePlainte", model);
+        }
+
+        // Charge les listes de choix du formulaire de saisie (communes à Saisie et Create).
+        private async Task RemplirListes(CreatePlainteViewModel model)
+        {
+            model.TypesFait = await _context.TypeFaits.AsNoTracking().OrderBy(t => t.LibFait).ToListAsync();
+            model.PartiesCommunes = await _context.PartieCommunes.AsNoTracking().Where(p => !p.SupprPc).OrderBy(p => p.LibPartieCommune).ToListAsync();
+            model.Cites = await _context.Cites.AsNoTracking().OrderBy(c => c.LibCite)
+                .Select(c => new CiteChoix(c.NumCite, c.LibCite, c.Secteur)).ToListAsync();
+            model.Categories = await _context.Categories.AsNoTracking().Where(c => !c.SupprCat).OrderBy(c => c.LibCat).ToListAsync();
+            model.SousCategories = await _context.SousCategories.AsNoTracking().Where(s => !s.SupprSousCat).OrderBy(s => s.LibSousCat)
+                .Select(s => new SousCategorieChoix(s.CodeSousCat, s.CodeCat, s.LibSousCat)).ToListAsync();
+            model.Nuisances = await _context.Nuisances.AsNoTracking().Where(n => !n.SupprNuisance).OrderBy(n => n.LibNuisance)
+                .Select(n => new NuisanceChoix(n.CodeNuisance, n.CodeSousCat, n.LibNuisance)).ToListAsync();
+            model.Natures = await _context.NaturePieces.AsNoTracking().OrderBy(n => n.LibNature).ToListAsync();
+            model.Secteurs = model.Cites.Where(c => !string.IsNullOrWhiteSpace(c.Secteur))
+                .Select(c => c.Secteur!).Distinct().OrderBy(s => s).ToList();
+        }
+
+        // Adresses d'une cité (bâtiments de la cité -> batiment_rue), pour la liste "Adresse" : "numéro rue code postal ville".
+        [Authorize]
+        [HttpGet("Creer/Rues")]
+        public async Task<IActionResult> RuesParCite(int numCite)
+        {
+            var adresses = await _context.BatimentRues.AsNoTracking()
+                .Where(br => br.IdBatNavigation.NumCite == numCite)
+                .Select(br => new { br.CodeRue, br.NumRue, Lib = br.CodeRueNavigation.LibRue, br.CodeRueNavigation.Cp, br.CodeRueNavigation.Ville })
+                .Distinct()
+                .OrderBy(a => a.Lib).ThenBy(a => a.NumRue)
+                .ToListAsync();
+            return Json(adresses.Select(a => new
+            {
+                // "codeRue|numRue" : le formulaire en tire CodeRue et NumRue.
+                valeur = $"{a.CodeRue}|{a.NumRue}",
+                libelle = string.Join(" ", new[] { a.NumRue, a.Lib, a.Cp, a.Ville }.Where(s => !string.IsNullOrWhiteSpace(s)))
+            }));
+        }
+
+        [Authorize]
         [Route("PiecesJointes/{id:int}")]
         public async Task<IActionResult> PieceJointeFichier(int id)
         {
@@ -61,20 +154,47 @@ namespace Plaintes.Controllers
             var pj = await _context.PieceJointes
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.NumPiece == id && !x.SupprPj);
-            if (pj?.Fichier == null) return NotFound();
+            if (pj == null) return NotFound();
 
             // On récupère le nom de la pièce jointe ou on génère un nom avec son numéro s'il n'existe pas.
             var nom = string.IsNullOrWhiteSpace(pj.LibPiece) ? $"piece-{pj.NumPiece}" : pj.LibPiece;
-            // On récupère le type du fichier afin de savoir comment l'envoyer au navigateur. S'il n'existe pas, on envoie un type générique.
+            Response.Headers.XContentTypeOptions = "nosniff";
+
+            // Nouvelles pièces : le fichier est sur le disque (CheminPiece). PDF et images s'ouvrent dans le navigateur,
+            // les autres types (Word...) sont téléchargés.
+            if (!string.IsNullOrEmpty(pj.CheminPiece))
+            {
+                Stream flux;
+                try
+                {
+                    if (!_storage.Exists(pj.CheminPiece))
+                    {
+                        _logger.LogWarning("Le fichier de la pièce jointe {PieceJointeId} n'existe pas dans le stockage.", id);
+                        return NotFound();
+                    }
+                    flux = _storage.Open(pj.CheminPiece);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or IOException)
+                {
+                    _logger.LogError(ex, "Impossible d'ouvrir le fichier de la pièce jointe {PieceJointeId}.", id);
+                    return NotFound();
+                }
+
+                // Le type est déduit de l'extension du nom d'origine (jamais d'un type envoyé par le client).
+                new FileExtensionContentTypeProvider().TryGetContentType(nom, out var typeDisque);
+                typeDisque ??= "application/octet-stream";
+                var inline = typeDisque == "application/pdf" || typeDisque.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+                Response.Headers.ContentDisposition =
+                    $"{(inline ? "inline" : "attachment")}; filename*=UTF-8''{Uri.EscapeDataString(nom)}";
+                return File(flux, typeDisque);
+            }
+
+            // Anciennes pièces : le contenu est en base (FICHIER). Elles sont toujours téléchargées.
+            if (pj.Fichier == null) return NotFound();
             var type = Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(pj.TypePiece, out var parsed)
                 ? parsed.MediaType.Value!
                 : "application/octet-stream";
-
-            // Seuls les PDF et les images s'ouvrent dans le navigateur ; le reste est téléchargé.
-            var inline = type == "application/pdf" || type.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
-            Response.Headers.ContentDisposition =
-                $"{(inline ? "inline" : "attachment")}; filename*=UTF-8''{Uri.EscapeDataString(nom)}";
-            Response.Headers.XContentTypeOptions = "nosniff";
+            Response.Headers.ContentDisposition = $"attachment; filename*=UTF-8''{Uri.EscapeDataString(nom)}";
             return File(pj.Fichier, type);
         }
 
@@ -82,13 +202,17 @@ namespace Plaintes.Controllers
         [Route("{id:int}/delete")]
         public async Task<IActionResult> SupprimerPlainte(int id)
         {
+            // On récupère la plainte dans la base de données.
             var plainte = await _context.Plaintes.FindAsync(id);
             if (plainte == null || plainte.Suppr)
             {
                 return NotFound();
             }
+
             // Marquer la plainte comme supprimée
             plainte.Suppr = true;
+
+            // On sauvegarde les changements dans la base de données.
             await _context.SaveChangesAsync();
             return RedirectToAction(nameof(Dossiers));
         }
@@ -97,6 +221,7 @@ namespace Plaintes.Controllers
         [Route("{id:int}/download")]
         public async Task<IActionResult> TelechargerPlainte(int id)
         {
+            // On récupère la plainte avec ses relations nécessaires pour générer le document Word.
             var plainte = await _context.Plaintes
                 .Include(p => p.Composers.Where(c => !c.SupprDet))
                     .ThenInclude(c => c.CodeNuisanceNavigation)
@@ -105,6 +230,7 @@ namespace Plaintes.Controllers
                 .Include(p => p.CodeRueNavigation)
                 .FirstOrDefaultAsync(p => p.NumPlainte == id && !p.Suppr);
 
+            // On construit nos couples clefs/valeurs pour le modèle de document Word à partir de la plainte récupérée.
             var valeurs = await _plainteSrv.getValuesForPlainteFile(plainte);
 
             if (valeurs == null)

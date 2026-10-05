@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Data;
 using Plaintes.Models;
 using Plaintes.Services;
+using Plaintes.Services.Stockage;
+using Microsoft.Extensions.Options;
 
 namespace Plaintes.Tests
 {
@@ -10,13 +12,20 @@ namespace Plaintes.Tests
     {
         private readonly AppDbContext _ctx = TestDb.CreerAvecDonnees();
         private readonly PlainteSrv _srv;
+        private readonly string _racine = Path.Combine(Path.GetTempPath(), "plaintes-tests-" + Guid.NewGuid());
 
         public PlainteSrvTests()
         {
-            _srv = new PlainteSrv(_ctx, NullLogger<PlainteSrv>.Instance, new ConfigurationBuilder().Build());
+            var reglages = Options.Create(new StorageSettings { Racine = _racine, MaxSize = 1024 * 1024, Extensions = new[] { ".pdf", ".png" } });
+            _srv = new PlainteSrv(_ctx, NullLogger<PlainteSrv>.Instance, new ConfigurationBuilder().Build(),
+                new FileSystemPieceStorage(reglages, new FakeEnv()));
         }
 
-        public void Dispose() => _ctx.Dispose();
+        public void Dispose()
+        {
+            _ctx.Dispose();
+            if (Directory.Exists(_racine)) Directory.Delete(_racine, true);
+        }
 
         private static int[] Numeros(PagedResult<Plainte> r) => r.Plaintes.Select(p => p.NumPlainte).ToArray();
 
@@ -111,14 +120,6 @@ namespace Plaintes.Tests
         }
 
         [Fact]
-        public async Task Filtre_Entree_ContientLeTexte()
-        {
-            var result = await _srv.getPlaintesWithFilters(new PlainteFiltres { entree = "E03" }, "numplainte", "asc", 1, 10);
-
-            Assert.Equal(new[] { 3 }, Numeros(result));
-        }
-
-        [Fact]
         public async Task Filtre_Reclamation_ContientLeTexte()
         {
             var result = await _srv.getPlaintesWithFilters(new PlainteFiltres { reclamation = "R1" }, "numplainte", "asc", 1, 10);
@@ -184,6 +185,119 @@ namespace Plaintes.Tests
             Assert.Equal(new[] { 1 }, Numeros(result));
         }
 
+        // ---------- validerPlainte ----------
+
+        private static CreatePlainteViewModel FormulaireValide() => new()
+        {
+            NumReclamation = "123-456",
+            CodePartieCommune = "PC1",
+            NumCite = 1,
+            CodeRue = 1,
+            NumRue = "12",
+            DateDeb = new DateOnly(2026, 1, 1),
+            CodeCat = "C1",
+            Details = { new DetailPlainteViewModel { CodeSousCat = "S1", CodeNuisance = "N1", Cout = 50 } }
+        };
+
+        private async Task<string?> Valider(Action<CreatePlainteViewModel>? modifier = null)
+        {
+            // L'adresse 12 de la rue 1 appartient à la cité 1.
+            if (!_ctx.Batiments.Any())
+            {
+                _ctx.Add(new Batiment { IdBat = 1, NumCite = 1, NumBat = "B1" });
+                _ctx.Add(new BatimentRue { IdBat = 1, CodeRue = 1, NumRue = "12" });
+            }
+            await _ctx.SaveChangesAsync();
+            var model = FormulaireValide();
+            modifier?.Invoke(model);
+            return await _srv.validerPlainte(model);
+        }
+
+        [Fact]
+        public async Task Valider_FormulaireConforme_RenvoieNull() => Assert.Null(await Valider());
+
+        [Fact]
+        public async Task Valider_ReclamationTropLongue_RenvoieErreur() =>
+            Assert.Contains("12 caractères", await Valider(m => m.NumReclamation = "1234567-1234567"));
+
+        [Fact]
+        public async Task Valider_ReclamationVide_RenvoieErreur() =>
+            Assert.Contains("réclamation", await Valider(m => m.NumReclamation = " "));
+
+        [Fact]
+        public async Task Valider_PartieCommuneInconnue_RenvoieErreur() =>
+            Assert.Contains("partie commune", await Valider(m => m.CodePartieCommune = "ZZ"));
+
+        [Fact]
+        public async Task Valider_AdresseHorsCite_RenvoieErreur() =>
+            Assert.Contains("n'appartient pas", await Valider(m => m.NumCite = 2));
+
+        [Fact]
+        public async Task Valider_DateFinAvantDebut_RenvoieErreur() =>
+            Assert.Contains("date de fin", await Valider(m => m.DateFin = new DateOnly(2025, 12, 31)));
+
+        [Fact]
+        public async Task Valider_CommentaireTropLong_RenvoieErreur() =>
+            Assert.Contains("250", await Valider(m => m.Commentaire = new string('x', 251)));
+
+        [Fact]
+        public async Task Valider_NuisanceDUneAutreCategorie_RenvoieErreur() =>
+            Assert.Contains("catégorie", await Valider(m => m.Details[0].CodeNuisance = "N2"));
+
+        [Fact]
+        public async Task Valider_TypeFaitAutres_SansPrecision_RenvoieErreur()
+        {
+            _ctx.Add(new TypeFait { CodeFait = "AUTR", LibFait = "Autres" });
+            await _ctx.SaveChangesAsync();
+
+            Assert.Contains("Précisez le type de faits", await Valider(m => m.CodeFait = "AUTR"));
+            Assert.Null(await Valider(m => { m.CodeFait = "AUTR"; m.PrecisionFait = "Autre fait"; }));
+        }
+
+        [Fact]
+        public async Task Valider_NatureAutre_SansPrecision_RenvoieErreur()
+        {
+            _ctx.Add(new NaturePiece { CodeNature = "AUTR", LibNature = "Autre" });
+            await _ctx.SaveChangesAsync();
+            var fichier = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream(new byte[] { 1 }), 0, 1, "f", "a.pdf") { Headers = new Microsoft.AspNetCore.Http.HeaderDictionary(), ContentType = "application/pdf" };
+
+            Assert.Contains("précisez la nature", await Valider(m => m.Pieces.Add(new PieceJointeViewModel { Fichier = fichier, CodeNature = "AUTR" })));
+            Assert.Null(await Valider(m => m.Pieces.Add(new PieceJointeViewModel { Fichier = fichier, CodeNature = "AUTR", PrecisionNature = "Courrier" })));
+        }
+
+        // ---------- AddPiecesAsync ----------
+
+        private static PieceJointeViewModel Piece(string nom, int octets = 10, string nature = "PHOT") => new()
+        {
+            Fichier = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream(new byte[octets]), 0, octets, "f", nom)
+            { Headers = new Microsoft.AspNetCore.Http.HeaderDictionary(), ContentType = "application/pdf" },
+            CodeNature = nature
+        };
+
+        [Fact]
+        public async Task AddPieces_EcritLeFichier_EtEnregistreLeCheminEtLeHash()
+        {
+            await _srv.AddPiecesAsync(7, new[] { Piece(@"C:\Users\x\facture.PDF", 2048) });
+
+            var pj = Assert.Single(_ctx.PieceJointes);
+            Assert.Equal("facture.PDF", pj.LibPiece);            // le dossier d'origine est retiré
+            Assert.Equal("2 Ko", pj.TaillePiece);
+            Assert.Null(pj.Fichier);                             // plus de contenu en base
+            Assert.Matches(@"^7/[0-9a-f-]{36}\.pdf$", pj.CheminPiece);   // toujours des "/"
+            Assert.Equal(64, pj.HashPiece!.Length);
+            Assert.True(File.Exists(Path.Combine(_racine, pj.CheminPiece!)));
+        }
+
+        [Fact]
+        public async Task AddPieces_UneExtensionRefusee_NEnregistreRienEtNettoieLeDisque()
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                _srv.AddPiecesAsync(7, new[] { Piece("ok.pdf"), Piece("virus.exe") }));
+
+            Assert.Empty(_ctx.PieceJointes);
+            Assert.Empty(Directory.GetFiles(_racine, "*", SearchOption.AllDirectories));
+        }
+
         // ---------- getPlaintesWithFilters : tri ----------
 
         [Theory]
@@ -192,7 +306,6 @@ namespace Plaintes.Tests
         [InlineData("cite", "asc", new[] { 2, 3, 1 })]       // "Les Chênes" avant "Les Pins" (égalité départagée par NumPlainte décroissant)
         [InlineData("cite", "desc", new[] { 3, 1, 2 })]
         [InlineData("categorie", "asc", new[] { 3, 1, 2 })]  // Bruit avant Odeur
-        [InlineData("entree", "desc", new[] { 3, 2, 1 })]
         [InlineData("reclamation", "asc", new[] { 1, 2, 3 })]
         [InlineData("datecreation", "asc", new[] { 1, 2, 3 })]
         [InlineData("datecreation", "desc", new[] { 3, 2, 1 })]

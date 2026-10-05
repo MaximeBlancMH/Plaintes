@@ -45,7 +45,7 @@ namespace Plaintes.Tests
             var hall = new PartieCommune { CodePartieCommune = "PC1", LibPartieCommune = "Hall" };
             var cave = new PartieCommune { CodePartieCommune = "PC2", LibPartieCommune = "Cave" };
 
-            Plainte NouvellePlainte(int num, Cite cite, Rue rue, PartieCommune pc, Categorie cat, string entree, string reclamation, DateTime creation, bool suppr = false) => new()
+            Plainte NouvellePlainte(int num, Cite cite, Rue rue, PartieCommune pc, Categorie cat, string reclamation, DateTime creation, bool suppr = false) => new()
             {
                 NumPlainte = num,
                 IdUser = user.IdUser,
@@ -60,17 +60,16 @@ namespace Plaintes.Tests
                 CodeCatNavigation = cat,
                 CodEtat = etat.CodEtat,
                 CodEtatNavigation = etat,
-                NumEntree = entree,
                 NumReclamation = reclamation,
                 DateCreation = creation,
                 DateModification = creation,
                 Suppr = suppr,
             };
 
-            var p1 = NouvellePlainte(1, pins, rueA, hall, c1, "E01", "R100", new DateTime(2026, 1, 1));
-            var p2 = NouvellePlainte(2, chenes, rueB, cave, c2, "E02", "R200", new DateTime(2026, 2, 1));
-            var p3 = NouvellePlainte(3, pins, rueA, hall, c1, "E03", "R300", new DateTime(2026, 3, 1));
-            var p4 = NouvellePlainte(4, pins, rueA, hall, c1, "E04", "R400", new DateTime(2026, 4, 1), suppr: true);
+            var p1 = NouvellePlainte(1, pins, rueA, hall, c1, "R100", new DateTime(2026, 1, 1));
+            var p2 = NouvellePlainte(2, chenes, rueB, cave, c2, "R200", new DateTime(2026, 2, 1));
+            var p3 = NouvellePlainte(3, pins, rueA, hall, c1, "R300", new DateTime(2026, 3, 1));
+            var p4 = NouvellePlainte(4, pins, rueA, hall, c1, "R400", new DateTime(2026, 4, 1), suppr: true);
 
             ctx.AddRange(user, etat, c1, c2, s1, s2, n1, n2, pins, chenes, rueA, rueB, hall, cave, p1, p2, p3, p4);
             ctx.AddRange(

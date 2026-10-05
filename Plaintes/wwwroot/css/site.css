@@ -229,3 +229,74 @@ body > .container {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
   text-align: start;
 }
+/* Infos du compte affichées au survol du nom dans la barre de navigation */
+.compte-hover {
+  position: relative;
+  cursor: default;
+}
+
+.compte-hover-card {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1100;
+  width: max-content;
+  max-width: 90vw;
+  padding: 1rem;
+  background: #fff;
+  color: #212529;
+  border-radius: .5rem;
+}
+
+.compte-hover:hover .compte-hover-card,
+.compte-hover:focus-within .compte-hover-card,
+.compte-hover:focus .compte-hover-card {
+  display: block;
+}
+
+@media (max-width: 991.98px) {
+  .compte-hover-card {
+    position: static;
+    min-width: 0;
+    margin-top: .5rem;
+  }
+}
+
+.compte-ligne {
+  display: flex;
+  gap: 1rem;
+  white-space: nowrap;
+}
+
+.compte-ligne strong {
+  min-width: 4rem;
+}
+
+/* Titres de parties pliantes (formulaire de plainte) */
+.btn-plier {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: .5rem 1rem;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.btn-plier::after {
+  content: "";
+  width: .6rem;
+  height: .6rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform .2s;
+}
+
+.btn-plier.collapsed::after {
+  transform: rotate(-45deg);
+}

@@ -28,6 +28,9 @@ namespace Plaintes.Tests
             public Task<PagedResult<Plainte>> getPlaintesForPage(int pageNumber, int pageSize) => Task.FromResult(new PagedResult<Plainte>());
             public Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize) => Task.FromResult(new PagedResult<Plainte>());
             public Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs) => Task.FromResult(new byte[0]);
+            public Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail) => Task.FromResult(true);
+            public Task<string?> validerPlainte(CreatePlainteViewModel model) => Task.FromResult<string?>(null);
+            public Task AddPiecesAsync(int numPlainte, IEnumerable<PieceJointeViewModel> pieces, CancellationToken ct = default) => Task.CompletedTask;
             public Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte) => Task.FromResult(new Dictionary<string, string>());
         }
 

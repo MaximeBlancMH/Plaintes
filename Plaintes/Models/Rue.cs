@@ -13,7 +13,9 @@ public partial class Rue
 
     public string? Ville { get; set; }
 
-    public virtual ICollection<Entree> Entrees { get; set; } = new List<Entree>();
-
     public virtual ICollection<Plainte> Plaintes { get; set; } = new List<Plainte>();
+
+    public virtual ICollection<Cite> Cites { get; set; } = new List<Cite>();
+
+    public virtual ICollection<BatimentRue> BatimentRues { get; set; } = new List<BatimentRue>();
 }

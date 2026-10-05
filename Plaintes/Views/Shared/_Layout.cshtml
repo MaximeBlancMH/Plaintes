@@ -14,6 +14,9 @@
         @{
             var isAuth = User.Identity?.IsAuthenticated ?? false;
             var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
+            var compteNom = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+            var compteEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            var compteDroit = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
             string Active(string c) => string.Equals(ctrl, c, StringComparison.OrdinalIgnoreCase) ? " active" : "";
         }
         <nav class="navbar navbar-expand-lg navbar-mh sticky-top" data-bs-theme="dark">
@@ -33,10 +36,7 @@
                                 <a class="nav-link@(Active("Dossier"))" href="/Dossiers">Dossiers</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link@(Active("Saisie"))" href="/Saisie">Saisir un dossier</a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link@(Active("Account"))" href="/Account">Mon Compte</a>
+                                <a class="nav-link@(Active("CreatePlainte"))" href="/Dossiers/Creer">Saisir un dossier</a>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link@(Active("Utilisateurs"))" href="/Utilisateurs">Gestion Utilisateurs</a>
@@ -46,7 +46,14 @@
                             </li>
                         </ul>
                         <div class="navbar-user d-flex align-items-lg-center flex-column flex-lg-row gap-2 gap-lg-3 pt-2 pt-lg-0">
-                            <span class="navbar-text text-white fw-semibold">@User.Identity!.Name</span>
+                            <div class="compte-hover" tabindex="0">
+                                <span class="navbar-text text-white fw-semibold">@User.Identity!.Name</span>
+                                <div class="compte-hover-card card-mh shadow" role="tooltip">
+                                    <div class="compte-ligne"><strong>Nom</strong><span>@(string.IsNullOrWhiteSpace(compteNom) ? "—" : compteNom)</span></div>
+                                    <div class="compte-ligne"><strong>Email</strong><span>@(string.IsNullOrWhiteSpace(compteEmail) ? "—" : compteEmail)</span></div>
+                                    <div class="compte-ligne"><strong>Droits</strong><span>@CompteViewModel.LibelleDroit(compteDroit)</span></div>
+                                </div>
+                            </div>
                             <button type="button" class="btn btn-mh btn-sm" data-bs-toggle="modal" data-bs-target="#logoutModal">
                                 Déconnexion
                             </button>
