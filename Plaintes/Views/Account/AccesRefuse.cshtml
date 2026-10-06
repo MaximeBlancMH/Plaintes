@@ -1,0 +1,36 @@
+@* Page « Accès refusé » : pour un utilisateur qui n'a pas les droits sur une page, ou dont le compte n'est plus actif.
+   Elle est visible sans être connecté (un compte désactivé ne peut plus se connecter). *@
+@{
+    ViewData["Title"] = "Accès refusé";
+    var connecte = User.Identity?.IsAuthenticated ?? false;
+    // Compte inconnu ou supprimé : connecté auprès de Microsoft, mais sans droit sur l'application.
+    var refuse = connecte && Plaintes.Services.ComptesClaims.EstRefuse(User);
+}
+
+<div class="row justify-content-center my-5">
+    <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow-sm text-center acces-refuse-card">
+            <div class="card-body p-4 p-md-5">
+                <div class="acces-refuse-icon mb-3" aria-hidden="true">&#10005;</div>
+                <h1 class="h3 mb-3">Vous n'avez pas accès à cette page</h1>
+                <p class="text-muted mb-2">
+                    Vos droits ne permettent pas d'ouvrir cette page, ou votre compte n'est plus actif.
+                </p>
+                <p class="text-muted mb-4">
+                    Si vous pensez qu'il s'agit d'une erreur, contactez un administrateur de l'application.
+                </p>
+                @if (refuse)
+                {
+                    @* Compte refusé : le menu est masqué, on propose de se déconnecter pour changer de compte. *@
+                    <form asp-controller="Account" asp-action="Logout" method="post" class="m-0">
+                        <button type="submit" class="btn btn-mh btn-lg">Se déconnecter</button>
+                    </form>
+                }
+                else if (connecte)
+                {
+                    <a class="btn btn-mh btn-lg" asp-controller="Dossier" asp-action="Dossiers">Retour aux dossiers</a>
+                }
+            </div>
+        </div>
+    </div>
+</div>

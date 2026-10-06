@@ -30,6 +30,12 @@ namespace Plaintes.Controllers
             return View();
         }
 
+
+        public IActionResult GestionTables()
+        {
+            return View();
+        }
+
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()
         {

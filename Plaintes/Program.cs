@@ -66,10 +66,10 @@ builder.Services.AddAuthentication(opt =>
 
         var identity = new ClaimsIdentity(ctx.Scheme.Name);
 
-        if (user == null)
+        if (!ComptesClaims.EstActif(user))
         {
-            logger.LogWarning("Connexion refusée : aucun utilisateur pour l'identifiant {Email}", email);
-            identity.AddClaim(new Claim("compte_inconnu", "1"));
+            logger.LogWarning("Connexion refusée : aucun utilisateur actif pour l'identifiant {Email} (inconnu ou supprimé)", email);
+            identity.AddClaim(new Claim(ComptesClaims.Refuse, "1"));
         }
         else
         {
@@ -112,6 +112,9 @@ builder.Services.AddAuthentication(opt =>
     var path = Path.Combine(builder.Environment.ContentRootPath, "Sustainsys.Saml2.Tests2.pfx");
     opt.SPOptions.ServiceCertificates.Add(new X509Certificate2(path));
 });
+
+// Tout [Authorize] exige d'être connecté ET de ne pas être un compte refusé (échec : /Account/AccessDenied -> page « accès refusé »).
+builder.Services.AddAuthorization(o => o.DefaultPolicy = ComptesClaims.PolitiqueParDefaut());
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();

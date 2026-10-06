@@ -300,3 +300,19 @@ body > .container {
 .btn-plier.collapsed::after {
   transform: rotate(-45deg);
 }
+
+/* Page « accès refusé » : même carte que la déconnexion, mais en rouge. */
+.acces-refuse-card {
+  border-top: 4px solid #dc3545;
+}
+
+.acces-refuse-icon {
+  width: 64px;
+  height: 64px;
+  line-height: 64px;
+  margin-inline: auto;
+  border-radius: 50%;
+  font-size: 2rem;
+  color: #fff;
+  background-color: #dc3545;
+}

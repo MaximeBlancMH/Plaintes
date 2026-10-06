@@ -159,7 +159,7 @@ namespace Plaintes.Data
                 entity.ToTable("composer");
 
                 entity.Property(e => e.NumDetail)
-                    .ValueGeneratedNever()
+                    .ValueGeneratedOnAdd()   // colonne IDENTITY en base (voir Scripts/composer_identity.sql)
                     .HasColumnName("NUMDETAIL");
                 entity.Property(e => e.CodeNuisance)
                     .HasMaxLength(5)

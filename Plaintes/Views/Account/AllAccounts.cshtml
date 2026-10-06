@@ -1,0 +1,239 @@
+@* Page "Gestion des utilisateurs" : liste de tous les utilisateurs de la base, avec ajout, modification et suppression.
+   Les formulaires envoient un POST vers /Account/AddAccount, /Account/EditAccount et /Account/DeleteAccount (voir AccountController). *@
+@model List<Utilisateur>
+@inject IWebHostEnvironment Env
+@{
+    ViewData["Title"] = "Gestion des utilisateurs";
+    var emailConnecte = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+    var aujourdhui = DateOnly.FromDateTime(DateTime.Today);
+    var droits = new[] { "R", "W", "A", "S" };
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 my-4">
+    <h1 class="h3 mb-0 titre-mh">Gestion des utilisateurs</h1>
+    <button type="button" class="btn btn-mh" data-bs-toggle="modal" data-bs-target="#utilisateurModal" data-mode="ajouter">Ajouter un utilisateur</button>
+</div>
+
+@* Message d'erreur laissé par le contrôleur avant la redirection (champ manquant, e-mail déjà utilisé, suppression de son propre compte...). *@
+@if (TempData["Erreur"] is string erreur && !string.IsNullOrWhiteSpace(erreur))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @erreur
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+    </div>
+}
+
+<div class="card shadow-sm card-mh">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-mh table-bordered table-hover align-middle mb-0" id="tableUtilisateurs">
+                <thead>
+                    <tr>
+                        <th>N°</th>
+                        <th>Nom</th>
+                        <th>E-mail</th>
+                        <th>Droits</th>
+                        <th>Date de fin</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in Model.OrderBy(u => u.NomUser ?? u.UserEmail))
+                    {
+                        var estMoi = !string.IsNullOrEmpty(emailConnecte) && string.Equals(u.UserEmail, emailConnecte, StringComparison.OrdinalIgnoreCase);
+                        var expire = u.DateFinu.HasValue && u.DateFinu.Value < aujourdhui;
+                        <tr class="@(expire ? "table-secondary" : "")">
+                            <td>@u.IdUser</td>
+                            <td>
+                                @(string.IsNullOrWhiteSpace(u.NomUser) ? "—" : u.NomUser)
+                                @if (estMoi) { <span class="badge text-bg-info ms-1">Vous</span> }
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(u.UserEmail) ? "—" : u.UserEmail)</td>
+                            <td>@CompteViewModel.LibelleDroit(u.Access)</td>
+                            <td>
+                                @if (u.DateFinu.HasValue)
+                                {
+                                    @u.DateFinu.Value.ToString("dd/MM/yyyy")
+                                    @if (expire) { <span class="badge text-bg-secondary ms-1">Expiré</span> }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-mh"
+                                        data-bs-toggle="modal" data-bs-target="#utilisateurModal" data-mode="modifier"
+                                        data-id="@u.IdUser" data-nom="@u.NomUser" data-email="@u.UserEmail" data-droit="@u.Access?.Trim().ToUpperInvariant()"
+                                        data-datefin="@u.DateFinu?.ToString("yyyy-MM-dd")">Modifier</button>
+                                @* On ne peut pas supprimer son propre compte : le bouton est désactivé. *@
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                        data-bs-toggle="modal" data-bs-target="#supprimerUtilisateurModal"
+                                        data-id="@u.IdUser" data-nom="@(string.IsNullOrWhiteSpace(u.NomUser) ? u.UserEmail : u.NomUser)"
+                                        disabled="@estMoi" title="@(estMoi ? "Vous ne pouvez pas supprimer votre propre compte." : null)">Supprimer</button>
+                            </td>
+                        </tr>
+                    }
+                    @if (Model.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-4">Aucun utilisateur.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer text-muted small">@Model.Count utilisateur@(Model.Count > 1 ? "s" : "")</div>
+</div>
+
+@* ---------- Zone de test TEMPORAIRE (environnement Development uniquement) ----------
+   Chaque bouton envoie au contrôleur un cas précis (données invalides, utilisateur inconnu, son propre compte...) pour vérifier
+   les messages d'erreur. À supprimer une fois les essais terminés. *@
+@if (Env.IsDevelopment())
+{
+    var moi = Model.FirstOrDefault(u => !string.IsNullOrEmpty(emailConnecte) && string.Equals(u.UserEmail, emailConnecte, StringComparison.OrdinalIgnoreCase));
+    var autres = Model.Where(u => u.IdUser != moi?.IdUser && !string.IsNullOrWhiteSpace(u.UserEmail)).ToList();
+    var cible = autres.FirstOrDefault() ?? moi;      // un utilisateur sur lequel essayer les modifications
+    var emailExistant = (cible?.UserEmail ?? emailConnecte) ?? "";
+    var emailUnique = $"test{DateTime.Now:yyyyMMddHHmmss}@test.fr";
+
+    // (libellé, action, champs envoyés, résultat attendu)
+    var essais = new List<(string Groupe, string Libelle, string Action, string[][] Champs, string Attendu)>
+    {
+        ("Ajout", "Champs vides", "AddAccount", new[] { new[] { "name", "" }, new[] { "email", "" }, new[] { "role", "" } }, "Erreur : champs obligatoires"),
+        ("Ajout", "Droit invalide", "AddAccount", new[] { new[] { "name", "Test" }, new[] { "email", emailUnique }, new[] { "role", "X" } }, "Erreur : rôle invalide"),
+        ("Ajout", "E-mail déjà utilisé", "AddAccount", new[] { new[] { "name", "Test" }, new[] { "email", emailExistant }, new[] { "role", "R" } }, "Erreur : e-mail déjà utilisé"),
+        ("Ajout", "Ajout valide (crée « Utilisateur de test »)", "AddAccount", new[] { new[] { "name", "Utilisateur de test" }, new[] { "email", emailUnique }, new[] { "role", "R" } }, "Aucune erreur : une ligne est ajoutée"),
+        ("Modification", "Champs vides", "EditAccount", new[] { new[] { "id", (cible?.IdUser ?? 0).ToString() }, new[] { "name", "" }, new[] { "email", "" }, new[] { "role", "" } }, "Erreur : champs obligatoires"),
+        ("Modification", "Droit invalide", "EditAccount", new[] { new[] { "id", (cible?.IdUser ?? 0).ToString() }, new[] { "name", "Test" }, new[] { "email", cible?.UserEmail ?? emailUnique }, new[] { "role", "X" } }, "Erreur : rôle invalide"),
+        ("Modification", "E-mail d'un autre utilisateur", "EditAccount", new[] { new[] { "id", (moi?.IdUser ?? 0).ToString() }, new[] { "name", moi?.NomUser ?? "Test" }, new[] { "email", autres.FirstOrDefault()?.UserEmail ?? emailExistant }, new[] { "role", moi?.Access ?? "R" } }, "Erreur : e-mail déjà utilisé (il faut un autre utilisateur)"),
+        ("Modification", "Utilisateur inconnu", "EditAccount", new[] { new[] { "id", "0" }, new[] { "name", "Test" }, new[] { "email", emailUnique }, new[] { "role", "R" } }, "Page 404"),
+        ("Suppression", "Son propre compte", "DeleteAccount", new[] { new[] { "id", (moi?.IdUser ?? 0).ToString() } }, moi == null ? "Votre compte n'est pas dans la liste : page 404" : "Erreur : impossible de supprimer son propre compte"),
+        ("Suppression", "Utilisateur inconnu", "DeleteAccount", new[] { new[] { "id", "0" } }, "Page 404"),
+    };
+
+    <div class="card shadow-sm card-mh mt-4 border-warning">
+        <div class="card-header bg-warning-subtle fw-semibold">Zone de test (temporaire, visible uniquement en développement)</div>
+        <div class="card-body">
+            @foreach (var groupe in essais.GroupBy(e => e.Groupe))
+            {
+                <h2 class="h6 mt-2">@groupe.Key</h2>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @foreach (var e in groupe)
+                    {
+                        <form method="post" action="@Url.Content("~/Account/" + e.Action)" class="m-0">
+                            @Html.AntiForgeryToken()
+                            @foreach (var champ in e.Champs)
+                            {
+                                <input type="hidden" name="@champ[0]" value="@champ[1]" />
+                            }
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="@e.Attendu">@e.Libelle</button>
+                        </form>
+                    }
+                </div>
+            }
+            <h2 class="h6 mt-2">Accès</h2>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("AccesRefuse", "Account")" title="Page « accès refusé » (code 403)">Voir la page « accès refusé »</a>
+                <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("AccessDenied", "Account")" title="Doit rediriger vers la page « accès refusé »">Aller sur AccessDenied</a>
+            </div>
+            <p class="small text-muted mb-0">
+                Le survol d'un bouton indique le résultat attendu. Pour tester un compte inconnu, un compte supprimé ou des droits insuffisants,
+                il faut se connecter avec un autre compte (ou mettre une date de fin à son propre compte en base, puis se reconnecter).
+            </p>
+        </div>
+    </div>
+}
+
+@* ---------- Modal ajout / modification (un seul formulaire, adapté par le script) ---------- *@
+<div class="modal fade" id="utilisateurModal" tabindex="-1" aria-labelledby="utilisateurModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header modal-header-mh">
+                <h5 class="modal-title" id="utilisateurModalLabel">Ajouter un utilisateur</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <form method="post" id="utilisateurForm" class="m-0" action="@Url.Content("~/Account/AddAccount")">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="utilisateurId" value="" />
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="utilisateurNom" class="form-label">Nom</label>
+                        <input type="text" class="form-control" id="utilisateurNom" name="name" maxlength="100" required />
+                    </div>
+                    <div class="mb-3">
+                        <label for="utilisateurEmail" class="form-label">E-mail</label>
+                        <input type="email" class="form-control" id="utilisateurEmail" name="email" maxlength="150" required />
+                        <div class="form-text">Adresse utilisée pour la connexion Microsoft.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="utilisateurDroit" class="form-label">Droits</label>
+                        <select class="form-select" id="utilisateurDroit" name="role" required>
+                            @foreach (var d in droits)
+                            {
+                                <option value="@d">@CompteViewModel.LibelleDroit(d)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-0">
+                        <label for="utilisateurDateFin" class="form-label">Date de fin <span class="text-muted">(facultative)</span></label>
+                        <input type="date" class="form-control" id="utilisateurDateFin" name="dateFin" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-mh" id="utilisateurValider">Ajouter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@* ---------- Modal de confirmation de suppression ---------- *@
+<div class="modal fade" id="supprimerUtilisateurModal" tabindex="-1" aria-labelledby="supprimerUtilisateurLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header modal-header-danger">
+                <h5 class="modal-title" id="supprimerUtilisateurLabel">Supprimer l'utilisateur</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <form method="post" class="m-0" action="@Url.Action("DeleteAccount", "Account")">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="supprimerUtilisateurId" value="" />
+                <div class="modal-body">
+                    <p class="mb-2">Voulez-vous vraiment supprimer l'utilisateur <strong id="supprimerUtilisateurNom"></strong> ?</p>
+                    <p class="mb-0 text-muted">Il ne pourra plus se connecter à l'application.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-danger">Supprimer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const $ = id => document.getElementById(id);
+
+            // Le même modal sert à ajouter et à modifier : Bootstrap fournit le bouton cliqué (relatedTarget).
+            $('utilisateurModal').addEventListener('show.bs.modal', e => {
+                const b = e.relatedTarget, modifier = b?.dataset.mode === 'modifier';
+                $('utilisateurModalLabel').textContent = modifier ? "Modifier l'utilisateur" : 'Ajouter un utilisateur';
+                $('utilisateurValider').textContent = modifier ? 'Enregistrer' : 'Ajouter';
+                $('utilisateurForm').action = modifier ? '@Url.Content("~/Account/EditAccount")' : '@Url.Content("~/Account/AddAccount")';
+                $('utilisateurId').value = modifier ? b.dataset.id : '';
+                $('utilisateurNom').value = modifier ? b.dataset.nom : '';
+                $('utilisateurEmail').value = modifier ? b.dataset.email : '';
+                $('utilisateurDroit').value = modifier && b.dataset.droit ? b.dataset.droit : 'R';
+                $('utilisateurDateFin').value = modifier ? b.dataset.datefin : '';
+            });
+
+            $('supprimerUtilisateurModal').addEventListener('show.bs.modal', e => {
+                $('supprimerUtilisateurId').value = e.relatedTarget.dataset.id;
+                $('supprimerUtilisateurNom').textContent = e.relatedTarget.dataset.nom;
+            });
+        })();
+    </script>
+}

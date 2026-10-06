@@ -12,7 +12,7 @@
 <body>
     <header>
         @{
-            var isAuth = User.Identity?.IsAuthenticated ?? false;
+            var isAuth = (User.Identity?.IsAuthenticated ?? false) && !Plaintes.Services.ComptesClaims.EstRefuse(User);   // un compte refusé ne voit ni menu ni nom
             var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
             var compteNom = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
             var compteEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
@@ -39,7 +39,7 @@
                                 <a class="nav-link@(Active("CreatePlainte"))" href="/Dossiers/Creer">Saisir un dossier</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link@(Active("Utilisateurs"))" href="/Utilisateurs">Gestion Utilisateurs</a>
+                                <a class="nav-link@(Active("Account"))" href="/Account/AllAccounts">Gestion Utilisateurs</a>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link@(Active("Tables"))" href="/Tables">Gestion des tables</a>
