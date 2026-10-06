@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Plaintes.Data;
 using Plaintes.Services;
+using Plaintes.Services.Export;
 using Plaintes.Services.IServices;
 using Plaintes.Services.Stockage;
 using Serilog;
@@ -21,8 +22,10 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IUtilisateurSrv, UtilisateurSrv>();
 builder.Services.AddScoped<IPlainteSrv, PlainteSrv>();
-builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = 25 * 1024 * 1024);
-builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 25 * 1024 * 1024);
+// MultipartBodyLengthLimit s'applique à chaque fichier d'un envoi : on le règle sur Storage:MaxSize (plus une marge) ; la taille totale
+// est relevée uniquement pour la saisie par LimiteEnvoiPiecesFilter.
+builder.Services.AddOptions<FormOptions>().Configure<IOptions<StorageSettings>>((o, s) => o.MultipartBodyLengthLimit = s.Value.MaxSize + 1024 * 1024);
+builder.Services.AddScoped<LimiteEnvoiPiecesFilter>();
 
 builder.Host.UseSerilog((ctx, lc) => lc.MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
@@ -33,6 +36,13 @@ builder.Host.UseSerilog((ctx, lc) => lc.MinimumLevel.Information()
 
 builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
 builder.Services.AddSingleton<IPieceStorage, FileSystemPieceStorage>();
+
+builder.Services.Configure<ExportSettings>(builder.Configuration.GetSection("Export"));
+// Singleton : le verrou qui sérialise les conversions doit être partagé par toutes les requêtes.
+builder.Services.AddSingleton<IConvertisseurPdf, LibreOfficeConvertisseurPdf>();
+builder.Services.AddScoped<IRecuperateurPieces, RecuperateurPieces>();
+builder.Services.AddScoped<IAssembleurPdf, PdfSharpAssembleur>();
+builder.Services.AddScoped<IExportPlainteSrv, ExportPlainteSrv>();
 
 builder.Services.AddAuthentication(opt =>
 {

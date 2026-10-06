@@ -417,10 +417,15 @@
                             </td>
                             @* Colonne des actions avec modifier, télécharger et supprimer *@
                             <td class="cell-actions">
-                                <div class="d-flex flex-column gap-1">
-                                    <a class="btn btn-sm btn-outline-mh" href="@Url.Content($"~/Dossiers/{p.NumPlainte}/update")">Modifier</a>
-                                    <a class="btn btn-sm btn-outline-mh" href="@Url.Content($"~/Dossiers/{p.NumPlainte}/download")">Télécharger</a>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" data-action="supprimer" data-id="@p.NumPlainte" data-url="@Url.Content($"~/Dossiers/{p.NumPlainte}/delete")" data-resume="@(p.NumCiteNavigation?.LibCite ?? "")">Supprimer</button>
+                                @* Un seul bouton : le menu s'ouvre au clic. data-bs-strategy="fixed" évite que le tableau (overflow) ne coupe le menu. *@
+                                <div class="dropdown">
+                                    <button type="button" class="btn btn-sm btn-outline-mh dropdown-toggle" data-bs-toggle="dropdown" data-bs-strategy="fixed" aria-expanded="false">Actions</button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item" href="@Url.Content($"~/Dossiers/{p.NumPlainte}/update")">Modifier</a></li>
+                                        <li><a class="dropdown-item" href="@Url.Content($"~/Dossiers/{p.NumPlainte}/download-pdf")">Télécharger (PDF)</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><button type="button" class="dropdown-item text-danger" data-action="supprimer" data-id="@p.NumPlainte" data-url="@Url.Content($"~/Dossiers/{p.NumPlainte}/delete")" data-resume="@(p.NumCiteNavigation?.LibCite ?? "")">Supprimer</button></li>
+                                    </ul>
                                 </div>
                             </td>
                         </tr>

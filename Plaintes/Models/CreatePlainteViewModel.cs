@@ -5,6 +5,11 @@ namespace Plaintes.Models
     /// <summary>Données du formulaire de création d'une plainte (champs saisis + listes de choix).</summary>
     public class CreatePlainteViewModel
     {
+        // N° de la plainte en cours de modification ; 0 pour une création. Renseigné par le contrôleur (jamais lu depuis le formulaire).
+        [Microsoft.AspNetCore.Mvc.ModelBinding.BindNever]
+        public int NumPlainte { get; set; }
+        public bool EstModification => NumPlainte > 0;
+
         // ---------- Champs saisis ----------
         [Display(Name = "N° de réclamation")]
         [Required(ErrorMessage = "Le n° de réclamation est obligatoire.")]
@@ -55,6 +60,10 @@ namespace Plaintes.Models
 
         public List<DetailPlainteViewModel> Details { get; set; } = new();
         public List<PieceJointeViewModel> Pieces { get; set; } = new();
+
+        // Modification : pièces déjà enregistrées (affichage) et numéros de celles que l'utilisateur retire.
+        public List<PieceExistanteViewModel> PiecesExistantes { get; set; } = new();
+        public List<int> PiecesASupprimer { get; set; } = new();
 
         // Message d'erreur affiché au-dessus du formulaire (rien à afficher si vide).
         public string? Erreur { get; set; }
@@ -113,6 +122,9 @@ namespace Plaintes.Models
         /// <summary>Extension en minuscules, avec le point (".pdf"), comparée à Storage:Extensions.</summary>
         public string Extension => Path.GetExtension(NomFichier ?? "").ToLowerInvariant();
     }
+
+    /// <summary>Une pièce déjà enregistrée d'une plainte, affichée dans le formulaire de modification (sans son contenu).</summary>
+    public record PieceExistanteViewModel(int NumPiece, string Nom, string? Taille, string? Nature);
 
     // Versions allégées pour les listes dépendantes (sérialisées en JSON pour la vue).
     public record CiteChoix(int NumCite, string? LibCite, string? Secteur);

@@ -14,6 +14,11 @@ namespace Plaintes.Services.Stockage
             if (string.IsNullOrWhiteSpace(_s.Racine))
                 throw new InvalidOperationException("Le chemin de stockage (Storage:Racine) n'est pas configuré");
 
+            // Sous Linux, "C:/..." n'est pas un chemin absolu : il serait pris pour un dossier relatif nommé "C:" et les fichiers
+            // seraient écrits au mauvais endroit sans erreur. On refuse donc explicitement ce cas.
+            if (!OperatingSystem.IsWindows() && System.Text.RegularExpressions.Regex.IsMatch(_s.Racine, @"^[A-Za-z]:[\\/]"))
+                throw new InvalidOperationException($"Storage:Racine ({_s.Racine}) est un chemin Windows, inutilisable sur ce système : indiquez un chemin Linux (ex. /var/plaintes/pieces).");
+
             _racine = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_s.Racine, env.ContentRootPath));
             if (!Directory.Exists(_racine))
                 Directory.CreateDirectory(_racine);
@@ -34,8 +39,10 @@ namespace Plaintes.Services.Stockage
                                         bool checkExtension = true, CancellationToken ct = default)
         {
             var ext = Path.GetExtension(originalName).ToLowerInvariant();
-            if (checkExtension && !_s.Extensions.Contains(ext))
+            if (checkExtension && !_s.ExtensionAutorisee(ext))
                 throw new InvalidOperationException($"Extension de fichier non autorisée : {ext}");
+
+            VerifierTemoin();
 
             // Toujours des "/" (et non Path.Combine) : le chemin est stocké en base, il doit être identique sous Windows et Linux.
             var relativePath = $"{numPlainte}/{Guid.NewGuid()}{ext}";
@@ -96,13 +103,20 @@ namespace Plaintes.Services.Stockage
             return File.Exists(absolutePath);
         }
 
-        public async Task CheckAsync()
+        // Si le partage est démonté, le dossier racine peut quand même exister (en local) : sans fichier témoin on écrirait
+        // sur le disque du serveur, et les fichiers disparaîtraient au remontage. Vérifié avant chaque écriture.
+        private void VerifierTemoin()
         {
-            // 1. le partage est-il vraiment monté ?
             if (!string.IsNullOrWhiteSpace(_s.FichierTemoin) &&
                 !File.Exists(Path.Combine(_racine, _s.FichierTemoin)))
                 throw new InvalidOperationException(
                     $"Fichier témoin '{_s.FichierTemoin}' introuvable dans {_racine} : le partage n'est probablement pas monté");
+        }
+
+        public async Task CheckAsync()
+        {
+            // 1. le partage est-il vraiment monté ?
+            VerifierTemoin();
 
             // 2. peut-on écrire et relire ?
             var dossier = Path.Combine(_racine, ".sante");

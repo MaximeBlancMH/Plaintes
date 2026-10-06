@@ -11,6 +11,7 @@ namespace Plaintes.Services.IServices
         Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs);
         Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte);
         Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail);
+        Task<bool> updatePlainte(CreatePlainteViewModel model);
         Task<string?> validerPlainte(CreatePlainteViewModel model);
         Task AddPiecesAsync(int numPlainte, IEnumerable<PieceJointeViewModel> pieces, CancellationToken ct = default);
     }

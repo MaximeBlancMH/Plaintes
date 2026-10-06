@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Data;
@@ -16,9 +17,12 @@ namespace Plaintes.Tests
 
         public PlainteSrvTests()
         {
-            var reglages = Options.Create(new StorageSettings { Racine = _racine, MaxSize = 1024 * 1024, Extensions = new[] { ".pdf", ".png" } });
+            var reglages = Options.Create(new StorageSettings { Racine = _racine, MaxSize = 1024 * 1024, MaxTotalSize = 3 * 1024, MaxPieces = 3, Extensions = new[] { ".pdf", ".png" }, FichierTemoin = ".ok" });
+            // Le fichier témoin simule un partage monté.
+            Directory.CreateDirectory(_racine);
+            File.WriteAllText(Path.Combine(_racine, ".ok"), "");
             _srv = new PlainteSrv(_ctx, NullLogger<PlainteSrv>.Instance, new ConfigurationBuilder().Build(),
-                new FileSystemPieceStorage(reglages, new FakeEnv()));
+                new FileSystemPieceStorage(reglages, new FakeEnv()), reglages);
         }
 
         public void Dispose()
@@ -201,6 +205,7 @@ namespace Plaintes.Tests
 
         private async Task<string?> Valider(Action<CreatePlainteViewModel>? modifier = null)
         {
+            if (!_ctx.NaturePieces.Any(n => n.CodeNature == "PHOT")) _ctx.Add(new NaturePiece { CodeNature = "PHOT", LibNature = "Photo" });
             // L'adresse 12 de la rue 1 appartient à la cité 1.
             if (!_ctx.Batiments.Any())
             {
@@ -295,7 +300,168 @@ namespace Plaintes.Tests
                 _srv.AddPiecesAsync(7, new[] { Piece("ok.pdf"), Piece("virus.exe") }));
 
             Assert.Empty(_ctx.PieceJointes);
-            Assert.Empty(Directory.GetFiles(_racine, "*", SearchOption.AllDirectories));
+            Assert.Empty(Directory.GetFiles(_racine, "*", SearchOption.AllDirectories).Where(c => Path.GetFileName(c) != ".ok"));
+        }
+
+        // ---------- validerPlainte : pièces jointes (Storage) ----------
+
+        [Fact]
+        public async Task Valider_ExtensionNonAutorisee_RenvoieErreur() =>
+            Assert.Contains("n'est pas autorisé", await Valider(m => m.Pieces.Add(Piece("script.exe"))));
+
+        [Fact]
+        public async Task Valider_ExtensionEnMajuscules_EstAcceptee() =>
+            Assert.Null(await Valider(m => m.Pieces.Add(Piece("FACTURE.PDF"))));
+
+        [Fact]
+        public async Task Valider_FichierTropVolumineux_RenvoieErreur() =>
+            Assert.Contains("taille maximale", await Valider(m => m.Pieces.Add(Piece("gros.pdf", 1024 * 1024 + 1))));
+
+        [Fact]
+        public async Task Valider_TailleTotaleDepassee_RenvoieErreur() =>
+            Assert.Contains("au total", await Valider(m => { m.Pieces.Add(Piece("a.pdf", 2000)); m.Pieces.Add(Piece("b.pdf", 2000)); }));
+
+        [Fact]
+        public async Task Valider_TropDePieces_RenvoieErreur() =>
+            Assert.Contains("plus de 3 pièces", await Valider(m => { for (int i = 0; i < 4; i++) m.Pieces.Add(Piece($"{i}.pdf", 1)); }));
+
+        // ---------- stockage : partage démonté et chemin Windows ----------
+
+        [Fact]
+        public async Task AddPieces_PartageDemonte_RefuseEcritureSurLeDisqueLocal()
+        {
+            File.Delete(Path.Combine(_racine, ".ok")); // le fichier témoin disparaît quand le partage est démonté
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _srv.AddPiecesAsync(7, new[] { Piece("a.pdf") }));
+
+            Assert.Contains("témoin", ex.Message);
+            Assert.Empty(_ctx.PieceJointes);
+            Assert.Empty(Directory.GetFiles(_racine, "*", SearchOption.AllDirectories).Where(c => Path.GetFileName(c) != ".ok"));
+        }
+
+        [Fact]
+        public void Stockage_CheminWindowsSousLinux_EstRefuse()
+        {
+            if (OperatingSystem.IsWindows()) return; // ce contrôle ne concerne que Linux/macOS
+
+            var reglages = Options.Create(new StorageSettings { Racine = "C:/Users/x/pieces" });
+            Assert.Throws<InvalidOperationException>(() => new FileSystemPieceStorage(reglages, new FakeEnv()));
+        }
+
+        // ---------- createPlainte ----------
+
+        [Fact]
+        public async Task CreatePlainte_EnregistreNumRue_EtRattacheLesDetailsALaBonnePlainte()
+        {
+            // InMemory ignore les transactions : on désactive l'avertissement correspondant.
+            var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+                .Options;
+            await using var ctx = new AppDbContext(options);
+            var reglages = Options.Create(new StorageSettings { Racine = _racine, FichierTemoin = ".ok" });
+            var srv = new PlainteSrv(ctx, NullLogger<PlainteSrv>.Instance, new ConfigurationBuilder().Build(),
+                new FileSystemPieceStorage(reglages, new FakeEnv()), reglages);
+
+            // NUMRECLAMATION n'est pas unique en base : une plainte existe déjà avec le même numéro.
+            ctx.Plaintes.Add(new Plainte { NumReclamation = "123-456", CodeCat = "C1", CodePartieCommune = "PC1", CodEtat = "Ec" });
+            await ctx.SaveChangesAsync();
+
+            var model = FormulaireValide();
+            model.Details.Clear();
+            model.Details.Add(new DetailPlainteViewModel { CodeNuisance = "N1", Cout = 50 });
+
+            Assert.True(await srv.createPlainte(model, "inconnu@test.fr"));
+
+            var nouvelle = ctx.Plaintes.Single(p => p.NumRue == "12");
+            Assert.Equal(1, nouvelle.CodeRue);
+            Assert.Equal("123-456", nouvelle.NumReclamation);
+            var composer = Assert.Single(ctx.Composers);
+            Assert.Equal(nouvelle.NumPlainte, composer.NumPlainte);   // et non la plainte déjà existante
+            Assert.Equal(2, ctx.Plaintes.Count());
+        }
+
+        // ---------- getValuesForPlainteFile (valeurs du modèle Word) ----------
+
+        private static Plainte PlainteExport(string? codeFait = null, Rue? rue = null) => new()
+        {
+            NumPlainte = 1,
+            NumReclamation = "123-456",
+            CodeFait = codeFait,
+            DateDeb = new DateOnly(2026, 1, 10),
+            NumRue = "12",
+            CodeRueNavigation = rue ?? new Rue { CodeRue = 1, LibRue = "RUE DES LILAS", Cp = "71000", Ville = "MACON" },
+            Commentaire = "Bruit"
+        };
+
+        [Theory]
+        [InlineData("DVOL", "{{CASE_VOLONTAIRES}}")]
+        [InlineData("DINC", "{{CASE_INCENDIE}}")]
+        [InlineData("TAGS", "{{CASE_TAGS}}")]
+        [InlineData("DORD", "{{CASE_ORDURES}}")]
+        [InlineData("AUTR", "{{CASE_AUTRES_FAITS}}")]
+        public async Task ValeursExport_CocheLaCaseDuTypeDeFaits(string code, string caseAttendue)
+        {
+            var valeurs = await _srv.getValuesForPlainteFile(PlainteExport(code));
+
+            var cases = new[] { "{{CASE_VOLONTAIRES}}", "{{CASE_INCENDIE}}", "{{CASE_TAGS}}", "{{CASE_ORDURES}}", "{{CASE_AUTRES_FAITS}}" };
+            Assert.All(cases, c => Assert.Equal(c == caseAttendue ? "☒" : "☐", valeurs[c]));
+        }
+
+        [Fact]
+        public async Task ValeursExport_AutresFaitsSansPrecision_RenvoieUneChaineVide()
+        {
+            var valeurs = await _srv.getValuesForPlainteFile(PlainteExport("AUTR"));
+
+            Assert.Equal("", valeurs["{{AUTRES_FAITS}}"]);   // jamais null : le remplacement dans le Word en dépend
+        }
+
+        [Fact]
+        public async Task ValeursExport_Lieu_AssembleNumeroRueVilleEtDepartement()
+        {
+            var valeurs = await _srv.getValuesForPlainteFile(PlainteExport());
+
+            Assert.Equal("12 RUE DES LILAS à MACON (71)", valeurs["{{LIEU}}"]);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("7")]
+        public async Task ValeursExport_CodePostalAbsentOuTropCourt_NePlantePas(string? cp)
+        {
+            var rue = new Rue { CodeRue = 1, LibRue = "RUE DES LILAS", Cp = cp, Ville = "MACON" };
+
+            var valeurs = await _srv.getValuesForPlainteFile(PlainteExport(rue: rue));
+
+            Assert.Equal("12 RUE DES LILAS à MACON", valeurs["{{LIEU}}"]);
+        }
+
+        [Fact]
+        public async Task ValeursExport_PiecesJointes_CochentLesCases_EtCumulentLesAutres()
+        {
+            var plainte = PlainteExport();
+            plainte.PieceJointes = new List<PieceJointe>
+            {
+                new() { CodeNature = "PHOT" },
+                new() { CodeNature = "AUTR", PrecisionNature = "Courrier" },
+                new() { CodeNature = "AUTR", PrecisionNature = "Constat" }
+            };
+
+            var valeurs = await _srv.getValuesForPlainteFile(plainte);
+
+            Assert.Equal("☒", valeurs["{{CASE_PHOTOS}}"]);
+            Assert.Equal("☐", valeurs["{{CASE_FACTURES}}"]);
+            Assert.Equal("☒", valeurs["{{CASE_AUTRES_PJ}}"]);
+            Assert.Equal("Courrier\nConstat\n", valeurs["{{AUTRES_PJ}}"]);
+        }
+
+        [Fact]
+        public async Task ValeursExport_SansPiecesJointes_CasesDecochees()
+        {
+            var valeurs = await _srv.getValuesForPlainteFile(PlainteExport());
+
+            Assert.All(new[] { "{{CASE_PHOTOS}}", "{{CASE_FACTURES}}", "{{CASE_AUTRES_PJ}}" }, c => Assert.Equal("☐", valeurs[c]));
+            Assert.Equal("", valeurs["{{AUTRES_PJ}}"]);
         }
 
         // ---------- getPlaintesWithFilters : tri ----------

@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Vml.Spreadsheet;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.Identity.Client;
 using Plaintes.Data;
 using Plaintes.Models;
@@ -19,14 +20,16 @@ namespace Plaintes.Services
         private readonly AppDbContext _context;
         private readonly ILogger<PlainteSrv> _logger;
         private readonly IPieceStorage _storage;
+        private readonly StorageSettings _reglagesStockage;
         // Code "Autre(s)" des tables type_fait et nature_piece : une précision est alors obligatoire.
         private const string CodeAutre = "AUTR";
-        public PlainteSrv(AppDbContext context, ILogger<PlainteSrv> logger, IConfiguration config, IPieceStorage storage)
+        public PlainteSrv(AppDbContext context, ILogger<PlainteSrv> logger, IConfiguration config, IPieceStorage storage, IOptions<StorageSettings> reglagesStockage)
         {
             _context = context;
             _logger = logger;
             _config = config;
             _storage = storage;
+            _reglagesStockage = reglagesStockage.Value;
         }
 
         private static IOrderedQueryable<T> Trier<T, TKey>(IQueryable<T> query, Expression<Func<T, TKey>> keySelector, string sens)
@@ -235,7 +238,7 @@ namespace Plaintes.Services
                     firstSeen = true;
                 }
 
-                index = firstIndex + value.Length;
+                depart = firstIndex + value.Length; // on reprend après la valeur insérée (évite de re-remplacer ou de boucler)
             }
         }
 
@@ -260,7 +263,7 @@ namespace Plaintes.Services
                 {
                     valeurs["{{CASE_INCENDIE}}"] = "☒";
                 }
-                else if (plainte.CodeFait == "DTAG")
+                else if (plainte.CodeFait == "TAGS")
                 {
                     valeurs["{{CASE_TAGS}}"] = "☒";
                 }
@@ -268,10 +271,10 @@ namespace Plaintes.Services
                 {
                     valeurs["{{CASE_ORDURES}}"] = "☒";
                 }
-                else if (plainte.CodeFait == "DAUT")
+                else if (plainte.CodeFait == "AUTR")
                 {
                     valeurs["{{CASE_AUTRES_FAITS}}"] = "☒";
-                    valeurs["{{AUTRES_FAITS}}"] = plainte.PrecisionFait;
+                    valeurs["{{AUTRES_FAITS}}"] = plainte.PrecisionFait ?? "";
                 }
 
                 if (plainte.DateDeb != null)
@@ -282,12 +285,23 @@ namespace Plaintes.Services
                     valeurs["{{DATE_ENTRE}}"] = plainte.DateFin != null && plainte.DateDeb != plainte.DateFin ? $"le {plainte.DateDeb.ToString("dd/MM/yyyy")} et le {plainte.DateFin?.ToString("dd/MM/yyyy")}" : "";
                 }
 
-                valeurs["{{LIEU}}"] = $"{plainte.NumRue} {plainte.CodeRueNavigation.LibRue} à {plainte.CodeRueNavigation.Ville} ({plainte.CodeRueNavigation.Cp.Substring(0, 2)})";
+                // Chaque morceau est facultatif en base (NUMRUE, LIBRUE, VILLE, CP peuvent être vides ou absents) : on n'assemble que ce qui existe.
+                var rue = plainte.CodeRueNavigation;
+                var departement = rue?.Cp?.Trim() is { Length: >= 2 } cp ? cp.Substring(0, 2) : "";
+                var voie = string.Join(" ", new[] { plainte.NumRue, rue?.LibRue }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()));
+                var commune = string.IsNullOrWhiteSpace(rue?.Ville) ? "" : $"à {rue.Ville.Trim()}";
+                var suffixe = departement == "" ? "" : $"({departement})";
+                valeurs["{{LIEU}}"] = string.Join(" ", new[] { voie, commune, suffixe }.Where(x => x != ""));
 
-                valeurs["{{EXPOSE}}"] = $"{plainte.Commentaire} (Réclamation Mâcon Habitat {plainte.NumReclamation}).";
+                valeurs["{{EXPOSE}}"] = $"{plainte.Commentaire?.Trim()} (Réclamation Mâcon Habitat {plainte.NumReclamation}).".Trim();
 
                 if (plainte.PieceJointes.Count() > 0)
                 {
+                    valeurs["{{CASE_PHOTOS}}"] = "☐";
+                    valeurs["{{CASE_FACTURES}}"] = "☐";
+                    valeurs["{{CASE_AUTRES_PJ}}"] = "☐";
+                    valeurs["{{AUTRES_PJ}}"] = "";
+
                     foreach (var pj in plainte.PieceJointes)
                     {
                         if (pj.CodeNature == "PHOT")
@@ -300,11 +314,6 @@ namespace Plaintes.Services
                             valeurs["{{AUTRES_PJ}}"] += $"{pj.PrecisionNature}\n";
                         }
                     }
-
-                    valeurs["{{CASE_PHOTOS}}"] = "☐";
-                    valeurs["{{CASE_FACTURES}}"] = "☐";
-                    valeurs["{{CASE_AUTRES_PJ}}"] = "☐";
-                    valeurs["{{AUTRES_PJ}}"] = "";
                 }
                 else
                 {
@@ -408,6 +417,17 @@ namespace Plaintes.Services
 
             // ---------- Pièces jointes : piece_jointe (LIBPIECE varchar(150), TYPEPIECE varchar(90) NOT NULL,
             //            FICHIER varbinary(max), CODENATURE varchar(4) NULL, PRECISIONNATURE varchar(100) NULL) ----------
+            // Modification : les pièces déjà enregistrées (et non retirées) comptent dans la limite.
+            var piecesConservees = 0;
+            if (model.EstModification)
+            {
+                if (!await _context.Plaintes.AnyAsync(p => p.NumPlainte == model.NumPlainte && !p.Suppr))
+                    return "Ce dossier n'existe plus.";
+                piecesConservees = await _context.PieceJointes.CountAsync(pj => pj.NumPlainte == model.NumPlainte
+                    && !pj.SupprPj && !model.PiecesASupprimer.Contains(pj.NumPiece));
+            }
+            if (piecesConservees + model.Pieces.Count > _reglagesStockage.MaxPieces)
+                return $"Vous ne pouvez pas joindre plus de {_reglagesStockage.MaxPieces} pièces.";
             for (int i = 0; i < model.Pieces.Count; i++)
             {
                 var piece = model.Pieces[i];
@@ -416,6 +436,10 @@ namespace Plaintes.Services
                     return $"Pièce jointe {n} : le fichier est vide ou manquant.";
                 if (piece.NomFichier is null || piece.NomFichier.Length > 150)
                     return $"Pièce jointe {n} : le nom du fichier est absent ou dépasse 150 caractères.";
+                if (!_reglagesStockage.ExtensionAutorisee(piece.Extension))
+                    return $"Pièce jointe {n} : le type de fichier « {(piece.Extension == "" ? "sans extension" : piece.Extension)} » n'est pas autorisé (autorisés : {string.Join(", ", _reglagesStockage.Extensions)}).";
+                if (piece.Fichier.Length > _reglagesStockage.MaxSize)
+                    return $"Pièce jointe {n} : le fichier fait {FormaterTaille(piece.Fichier.Length)}, la taille maximale est de {FormaterTaille(_reglagesStockage.MaxSize)}.";
                 if (string.IsNullOrEmpty(piece.Fichier.ContentType) || piece.Fichier.ContentType.Length > 90)
                     return $"Pièce jointe {n} : le type du fichier est invalide.";
                 if (string.IsNullOrEmpty(piece.CodeNature))
@@ -428,6 +452,9 @@ namespace Plaintes.Services
                     return $"Pièce jointe {n} : la précision ne peut pas dépasser 100 caractères.";
             }
 
+            var tailleTotale = model.Pieces.Sum(p => p.Fichier?.Length ?? 0);
+            if (tailleTotale > _reglagesStockage.MaxTotalSize)
+                return $"Les pièces jointes font {FormaterTaille(tailleTotale)} au total, le maximum est de {FormaterTaille(_reglagesStockage.MaxTotalSize)}.";
             return null;
         }
 
@@ -488,6 +515,59 @@ namespace Plaintes.Services
             _ => $"{octets / 1024.0 / 1024.0:0.#} Mo"
         };
 
+        /// <summary>
+        /// Enregistre la modification d'une plainte (après validerPlainte). Les anciens détails sont marqués supprimés (SUPPRDET) et
+        /// remplacés par ceux du formulaire ; les pièces retirées sont marquées supprimées (SUPPRPJ, fichier laissé sur le disque) ;
+        /// les nouvelles pièces sont ajoutées. Tout est enregistré dans une transaction. Renvoie false si la plainte n'existe plus
+        /// ou si l'enregistrement échoue.
+        /// </summary>
+        public async Task<bool> updatePlainte(CreatePlainteViewModel model)
+        {
+            try
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+
+                var plainte = await _context.Plaintes
+                    .Include(p => p.Composers)
+                    .Include(p => p.PieceJointes)
+                    .FirstOrDefaultAsync(p => p.NumPlainte == model.NumPlainte && !p.Suppr);
+                if (plainte == null) return false;
+
+                plainte.NumReclamation = model.NumReclamation!;
+                plainte.CodeFait = model.CodeFait;
+                plainte.PrecisionFait = model.CodeFait == CodeAutre ? model.PrecisionFait?.Trim() : null;
+                plainte.CodePartieCommune = model.CodePartieCommune!;
+                plainte.NumCite = model.NumCite.GetValueOrDefault();
+                plainte.CodeRue = model.CodeRue.GetValueOrDefault();
+                plainte.NumRue = model.NumRue?.Trim();
+                plainte.DateDeb = model.DateDeb.GetValueOrDefault();
+                plainte.DateFin = model.DateFin;
+                plainte.Commentaire = model.Commentaire;
+                plainte.CodeCat = model.CodeCat!;
+                plainte.DateModification = DateTime.Now;   // la valeur par défaut de la base ne joue qu'à la création
+
+                foreach (var ancien in plainte.Composers.Where(c => !c.SupprDet))
+                    ancien.SupprDet = true;
+                foreach (var detail in model.Details)
+                    plainte.Composers.Add(new Composer { CodeNuisance = detail.CodeNuisance!, Cout = detail.Cout });
+
+                // Seules les pièces de cette plainte peuvent être retirées, quels que soient les numéros reçus.
+                foreach (var pj in plainte.PieceJointes.Where(pj => !pj.SupprPj && model.PiecesASupprimer.Contains(pj.NumPiece)))
+                    pj.SupprPj = true;
+
+                await _context.SaveChangesAsync();
+                await AddPiecesAsync(plainte.NumPlainte, model.Pieces);
+
+                await transaction.CommitAsync();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erreur lors de la modification de la plainte {NumPlainte}.", model.NumPlainte);
+                return false;
+            }
+        }
+
         public async Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail)
         {
             try
@@ -503,6 +583,7 @@ namespace Plaintes.Services
                     CodePartieCommune = model.CodePartieCommune,
                     NumCite = model.NumCite.GetValueOrDefault(),
                     CodeRue = model.CodeRue.GetValueOrDefault(),
+                    NumRue = model.NumRue?.Trim(),
                     DateDeb = model.DateDeb.GetValueOrDefault(),
                     DateFin = model.DateFin,
                     Commentaire = model.Commentaire,
@@ -514,8 +595,6 @@ namespace Plaintes.Services
                 _context.Plaintes.Add(plainte);
                 await _context.SaveChangesAsync();
 
-                plainte = await _context.Plaintes
-                    .FirstOrDefaultAsync(p => p.NumReclamation == plainte.NumReclamation);
                 foreach (var detail in model.Details)
                 {
                     var composer = new Composer

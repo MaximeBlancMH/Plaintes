@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Plaintes.Data;
 using Plaintes.Models;
+using Plaintes.Services.Export;
 using Plaintes.Services.IServices;
 using Plaintes.Services.Stockage;
 using System.Security.Claims;
@@ -70,6 +71,7 @@ namespace Plaintes.Controllers
 
         [Authorize]
         [HttpPost("Creer")]
+        [ServiceFilter(typeof(LimiteEnvoiPiecesFilter), Order = int.MinValue)]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(CreatePlainteViewModel model)
         {
@@ -217,34 +219,168 @@ namespace Plaintes.Controllers
             return RedirectToAction(nameof(Dossiers));
         }
 
+        // Formulaire de modification : le même que la création, rempli avec les données de la plainte.
         [Authorize]
-        [Route("{id:int}/download")]
-        public async Task<IActionResult> TelechargerPlainte(int id)
+        [HttpGet("{id:int}/update")]
+        public async Task<IActionResult> ModifierPlainte(int id)
         {
-            // On récupère la plainte avec ses relations nécessaires pour générer le document Word.
+            // On récupère la plainte dans la base de données (les pièces sont lues à part, sans leur contenu).
+            var plainte = await _context.Plaintes
+                .AsNoTracking()
+                .Include(p => p.NumCiteNavigation)
+                .Include(p => p.Composers.Where(c => !c.SupprDet))
+                    .ThenInclude(c => c.CodeNuisanceNavigation)
+                .FirstOrDefaultAsync(p => p.NumPlainte == id && !p.Suppr);
+            if (plainte == null)
+            {
+                return NotFound();
+            }
+
+            // On prépare le modèle pour la vue de modification.
+            var model = new CreatePlainteViewModel
+            {
+                NumPlainte = plainte.NumPlainte,
+                NumReclamation = plainte.NumReclamation,
+                CodeFait = plainte.CodeFait,
+                PrecisionFait = plainte.PrecisionFait,
+                CodePartieCommune = plainte.CodePartieCommune,
+                Secteur = plainte.NumCiteNavigation?.Secteur,
+                NumCite = plainte.NumCite,
+                CodeRue = plainte.CodeRue,
+                NumRue = plainte.NumRue,
+                DateDeb = plainte.DateDeb,
+                DateFin = plainte.DateFin,
+                Commentaire = plainte.Commentaire,
+                CodeCat = plainte.CodeCat
+            };
+
+            foreach (var det in plainte.Composers)
+            {
+                model.Details.Add(new DetailPlainteViewModel
+                {
+                    CodeNuisance = det.CodeNuisance,
+                    CodeSousCat = det.CodeNuisanceNavigation?.CodeSousCat,
+                    Cout = det.Cout
+                });
+            }
+
+            await ChargerPiecesExistantes(model);
+            await RemplirListes(model);
+            return View("CreatePlainte", model);
+        }
+
+        // Enregistre la modification. Mêmes contrôles que pour la création ; le n° de plainte vient de l'adresse, jamais du formulaire.
+        [Authorize]
+        [HttpPost("{id:int}/update")]
+        [ServiceFilter(typeof(LimiteEnvoiPiecesFilter), Order = int.MinValue)]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ModifierPlainte(int id, CreatePlainteViewModel model)
+        {
+            model.NumPlainte = id;
+
+            if (!ModelState.IsValid)
+            {
+                model.Erreur = ModelState.Values.SelectMany(v => v.Errors)
+                    .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Une valeur saisie est invalide." : e.ErrorMessage)
+                    .First();
+            }
+            else
+            {
+                model.Erreur = await _plainteSrv.validerPlainte(model);
+                if (model.Erreur == "Ce dossier n'existe plus.")
+                    return NotFound();
+                if (model.Erreur == null)
+                {
+                    if (await _plainteSrv.updatePlainte(model))
+                        return RedirectToAction(nameof(Dossiers));
+                    model.Erreur = "La plainte n'a pas pu être modifiée.";
+                }
+            }
+
+            // Les listes de choix et les pièces déjà enregistrées ne sont pas renvoyées par le formulaire : on les recharge.
+            await ChargerPiecesExistantes(model);
+            await RemplirListes(model);
+            return View("CreatePlainte", model);
+        }
+
+        // Pièces non supprimées de la plainte, sans leur contenu (les anciennes pièces ont leur fichier en base : on ne le charge pas).
+        private async Task ChargerPiecesExistantes(CreatePlainteViewModel model)
+        {
+            var pieces = await _context.PieceJointes
+                .AsNoTracking()
+                .Where(pj => pj.NumPlainte == model.NumPlainte && !pj.SupprPj)
+                .OrderBy(pj => pj.NumPiece)
+                .Select(pj => new { pj.NumPiece, pj.LibPiece, pj.TaillePiece, pj.CodeNature, Nature = pj.CodeNatureNavigation!.LibNature, pj.PrecisionNature })
+                .ToListAsync();
+            model.PiecesExistantes = pieces.Select(pj => new PieceExistanteViewModel(
+                pj.NumPiece,
+                string.IsNullOrWhiteSpace(pj.LibPiece) ? $"Pièce {pj.NumPiece}" : pj.LibPiece,
+                pj.TaillePiece,
+                pj.CodeNature == "AUTR" && !string.IsNullOrWhiteSpace(pj.PrecisionNature) ? $"{pj.Nature} : {pj.PrecisionNature}" : pj.Nature)).ToList();
+        }
+
+        //[Authorize]
+        //[Route("{id:int}/download")]
+        //public async Task<IActionResult> TelechargerPlainte(int id)
+        //{
+        //    // On récupère la plainte avec ses relations nécessaires pour générer le document Word.
+        //    var plainte = await _context.Plaintes
+        //        .Include(p => p.Composers.Where(c => !c.SupprDet))
+        //            .ThenInclude(c => c.CodeNuisanceNavigation)
+        //                .ThenInclude(n => n.CodeSousCatNavigation)
+        //        .Include(p => p.PieceJointes.Where(pj => !pj.SupprPj))
+        //        .Include(p => p.CodeRueNavigation)
+        //        .FirstOrDefaultAsync(p => p.NumPlainte == id && !p.Suppr);
+
+        //    // On construit nos couples clefs/valeurs pour le modèle de document Word à partir de la plainte récupérée.
+        //    var valeurs = await _plainteSrv.getValuesForPlainteFile(plainte);
+
+        //    if (valeurs == null)
+        //    {
+        //        _logger.LogWarning("Aucune plainte trouvée pour l'ID {PlainteId}.", id);
+        //        return NotFound();
+        //    }
+
+        //    // Générer le document Word de la plainte (à partir du modèle .docx)
+        //    var docBytes = await _plainteSrv.createPlainteFile(valeurs);
+        //    // Retourner le document Word en tant que fichier téléchargeable
+        //    return File(docBytes,
+        //        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        //        $"plainte-{plainte.NumPlainte}.docx");
+        //}
+
+        [Authorize]
+        [Route("{id:int}/download-pdf")]
+        public async Task<IActionResult> TelechargerPlaintePdf(int id, [FromServices] IExportPlainteSrv export, CancellationToken ct)
+        {
+            // On récupère la plainte avec ses relations nécessaires pour générer le PDF.
             var plainte = await _context.Plaintes
                 .Include(p => p.Composers.Where(c => !c.SupprDet))
                     .ThenInclude(c => c.CodeNuisanceNavigation)
                         .ThenInclude(n => n.CodeSousCatNavigation)
                 .Include(p => p.PieceJointes.Where(pj => !pj.SupprPj))
                 .Include(p => p.CodeRueNavigation)
-                .FirstOrDefaultAsync(p => p.NumPlainte == id && !p.Suppr);
-
-            // On construit nos couples clefs/valeurs pour le modèle de document Word à partir de la plainte récupérée.
-            var valeurs = await _plainteSrv.getValuesForPlainteFile(plainte);
-
-            if (valeurs == null)
+                .FirstOrDefaultAsync(p => p.NumPlainte == id && !p.Suppr, ct);
+            if (plainte == null)
             {
                 _logger.LogWarning("Aucune plainte trouvée pour l'ID {PlainteId}.", id);
                 return NotFound();
             }
 
-            // Générer le document Word de la plainte (à partir du modèle .docx)
-            var docBytes = await _plainteSrv.createPlainteFile(valeurs);
-            // Retourner le document Word en tant que fichier téléchargeable
-            return File(docBytes,
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                $"plainte-{plainte.NumPlainte}.docx");
+            try
+            {
+                // Plainte convertie en PDF, suivie de ses pièces jointes (PDF repris, images posées sur une page, Word convertis).
+                var resultat = await export.ExporterPdfAsync(plainte, ct);
+                if (resultat.NonJointes.Count > 0)
+                    _logger.LogWarning("Export PDF de la plainte {PlainteId} : {Nb} pièce(s) non intégrée(s) : {Pieces}",
+                        id, resultat.NonJointes.Count, string.Join(" | ", resultat.NonJointes));
+                return File(resultat.Pdf, "application/pdf", $"plainte-{plainte.NumPlainte}.pdf");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException)
+            {
+                _logger.LogError(ex, "Échec de l'export PDF de la plainte {PlainteId}.", id);
+                return StatusCode(StatusCodes.Status500InternalServerError, "L'export PDF a échoué. Veuillez réessayer ou contacter le support.");
+            }
         }
     }
 }

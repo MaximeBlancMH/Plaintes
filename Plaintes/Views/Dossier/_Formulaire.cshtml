@@ -2,8 +2,14 @@
    Les listes dépendantes (secteur -> cité -> adresse, catégorie -> sous-catégorie -> nuisance) sont
    filtrées côté navigateur à partir des données du modèle ; seules les adresses sont chargées à la demande. *@
 @model CreatePlainteViewModel
+@inject Microsoft.Extensions.Options.IOptions<Plaintes.Services.Stockage.StorageSettings> Stockage
+@{
+    // Règles de Storage (appsettings) : la liste "accept" et les contrôles JavaScript en sont déduits, comme ceux du serveur.
+    var reglages = Stockage.Value;
+}
 
-<form id="formPlainte" method="post" enctype="multipart/form-data" asp-controller="Dossier" asp-action="Create">
+<form id="formPlainte" method="post" enctype="multipart/form-data" asp-controller="Dossier"
+      asp-action="@(Model.EstModification ? "ModifierPlainte" : "Create")" asp-route-id="@(Model.EstModification ? Model.NumPlainte : (int?)null)">
     @* Erreur de conformité (voir PlainteSrv.validerPlainte) : cachée tant qu'il n'y en a pas. *@
     <div id="erreurFormulaire" class="alert alert-danger" role="alert" hidden="@string.IsNullOrEmpty(Model.Erreur)">@Model.Erreur</div>
 
@@ -163,6 +169,26 @@
     <div class="card shadow-sm card-mh mb-4">
         <div class="card-header h5 mb-0 p-0"><button type="button" class="btn-plier collapsed" data-bs-toggle="collapse" data-bs-target="#partiePieces" aria-expanded="false" aria-controls="partiePieces">Pièces jointes</button></div>
         <div class="card-body p-4 collapse" id="partiePieces">
+            @if (Model.PiecesExistantes.Count > 0)
+            {
+                @* Modification : pièces déjà enregistrées. « Retirer » active un champ caché PiecesASupprimer ; « Conserver » l'annule. *@
+                <h6>Pièces déjà jointes</h6>
+                <ul class="list-group mb-3" id="listePiecesExistantes">
+                    @foreach (var pj in Model.PiecesExistantes)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2" data-existante="1">
+                            <span class="texte-piece flex-grow-1">
+                                <a href="@Url.Action("PieceJointeFichier", "Dossier", new { id = pj.NumPiece })" target="_blank" rel="noopener">@pj.Nom</a>
+                                @if (!string.IsNullOrWhiteSpace(pj.Nature)) { <span class="text-muted"> — @pj.Nature</span> }
+                                @if (!string.IsNullOrWhiteSpace(pj.Taille)) { <span class="text-muted small"> (@pj.Taille)</span> }
+                            </span>
+                            <input type="hidden" name="PiecesASupprimer" value="@pj.NumPiece" disabled="@(!Model.PiecesASupprimer.Contains(pj.NumPiece))" />
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-bascule-retrait="1">Retirer</button>
+                        </li>
+                    }
+                </ul>
+            }
+            @if (Model.PiecesExistantes.Count > 0) { <h6>Nouvelles pièces</h6> }
             <ul class="list-group mb-3" id="listePieces"></ul>
             <div class="border rounded p-3 bg-light">
                 <div class="row g-3 align-items-end">
@@ -170,7 +196,9 @@
                         <label class="form-label" for="pjFichier">Fichier</label>
                         <div id="zoneFichier">
                             <input type="file" id="pjFichier" class="form-control"
-                                   accept=".pdf,.doc,.docx,.xls,.xlsx,.odt,.ods,.jpg,.jpeg,.png,.gif,.bmp,.webp,.tif,.tiff,.txt,.msg,.eml" />
+                                   accept="@string.Join(",", reglages.Extensions)" />
+                            <div id="pjMessage" class="text-danger small mt-1" role="alert" hidden></div>
+                            <div class="form-text">Types acceptés : @string.Join(", ", reglages.Extensions) — @(reglages.MaxSize / 1024 / 1024) Mo maximum par fichier.</div>
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -197,14 +225,27 @@
 
     <div class="d-flex justify-content-end gap-2 mb-5">
         <a asp-action="Dossiers" class="btn btn-outline-secondary">Annuler</a>
-        <button type="submit" class="btn btn-mh">Enregistrer la plainte</button>
+        <button type="submit" class="btn btn-mh">@(Model.EstModification ? "Enregistrer les modifications" : "Enregistrer la plainte")</button>
     </div>
 </form>
 
 <partial name="_ValidationScriptsPartial" />
 
 <script type="application/json" id="donneesFormulaire">
-    @Html.Raw(Json.Serialize(new { cites = Model.Cites, sousCategories = Model.SousCategories, nuisances = Model.Nuisances }))
+    @* "initial" : valeurs à remettre dans les listes dépendantes (modification, ou réaffichage après une erreur de saisie). *@
+    @Html.Raw(Json.Serialize(new
+    {
+        cites = Model.Cites,
+        sousCategories = Model.SousCategories,
+        nuisances = Model.Nuisances,
+        initial = new
+        {
+            secteur = Model.Secteur,
+            numCite = Model.NumCite,
+            adresse = Model.CodeRue.HasValue ? $"{Model.CodeRue}|{Model.NumRue}" : null,
+            details = Model.Details
+        }
+    }))
 </script>
 <script>
 (function () {
@@ -247,20 +288,22 @@
 
     // ----- Patrimoine : secteur -> cité -> adresse -----
     const secteur = $('Secteur'), cite = $('NumCite'), rue = $('adresseChoix');
-    secteur.addEventListener('change', () => {
+    const majCites = () => {
         rue.innerHTML = ''; $('blocRue').hidden = true;
         const cites = donnees.cites.filter(c => c.secteur === secteur.value);
         $('blocCite').hidden = !secteur.value;
         remplir(cite, cites, 'numCite', 'libCite');
-    });
-    cite.addEventListener('change', async () => {
+    };
+    const majRues = async () => {
         $('blocRue').hidden = !cite.value;
         rue.innerHTML = vide;
         if (!cite.value) return;
         const reponse = await fetch('@Url.Action("RuesParCite", "Dossier")?numCite=' + encodeURIComponent(cite.value));
         if (!reponse.ok) return;
         remplir(rue, await reponse.json(), 'valeur', 'libelle');
-    });
+    };
+    secteur.addEventListener('change', majCites);
+    cite.addEventListener('change', majRues);
 
     rue.addEventListener('change', () => {
         const [codeRue, numRue] = rue.value.split('|');
@@ -297,7 +340,8 @@
             h.name = `Details[${i}].${h.dataset.champ}`));
         $('aucunDetail').hidden = lignes.length > 0;
     };
-    btnDetail.addEventListener('click', () => {
+    // Ajoute une ligne au tableau des détails (utilisée par le bouton « Ajouter » et pour remplir le formulaire existant).
+    const ajouterDetail = (libCategorie, codeSousCat, libSousCat, codeNuisance, libNuisance, coutSaisi) => {
         const tr = document.createElement('tr');
         tr.dataset.detail = '1';
         const cellule = (texte) => { const td = document.createElement('td'); td.textContent = texte; return td; };
@@ -305,12 +349,9 @@
             const h = document.createElement('input');
             h.type = 'hidden'; h.dataset.champ = champ; h.value = valeur; return h;
         };
-        tr.append(cellule($('detCategorie').value),
-                  cellule(sousCat.selectedOptions[0].textContent),
-                  cellule(nuisance.selectedOptions[0].textContent),
-                  cellule(cout.value));
+        tr.append(cellule(libCategorie), cellule(libSousCat), cellule(libNuisance), cellule(coutSaisi));
         tr.children[3].className = 'text-end';
-        tr.children[0].append(cacher('CodeSousCat', sousCat.value), cacher('CodeNuisance', nuisance.value), cacher('Cout', cout.value));
+        tr.children[0].append(cacher('CodeSousCat', codeSousCat), cacher('CodeNuisance', codeNuisance), cacher('Cout', coutSaisi));
         const tdSuppr = document.createElement('td');
         tdSuppr.className = 'text-end';
         const bouton = document.createElement('button');
@@ -319,6 +360,10 @@
         tdSuppr.append(bouton); tr.append(tdSuppr);
         corps.append(tr);
         reindexerDetails();
+    };
+    btnDetail.addEventListener('click', () => {
+        ajouterDetail($('detCategorie').value, sousCat.value, sousCat.selectedOptions[0].textContent,
+                      nuisance.value, nuisance.selectedOptions[0].textContent, cout.value);
         // Le formulaire reste disponible pour un autre détail : on garde la catégorie, on vide le reste.
         sousCat.value = ''; reinitDetail();
     });
@@ -328,13 +373,48 @@
     const nature = $('pjNature'), precision = $('pjPrecision'), btnPj = $('btnAjouterPj');
     const liste = $('listePieces');
     const natureAutre = () => nature.value === CODE_AUTRE;
+    // Mêmes règles que le serveur (Storage:Extensions, MaxSize, MaxTotalSize, MaxPieces) : le message évite un aller-retour inutile.
+    const REGLES = { maxSize: @reglages.MaxSize, maxTotal: @reglages.MaxTotalSize, maxPieces: @reglages.MaxPieces,
+                     extensions: @Html.Raw(Json.Serialize(reglages.Extensions.Select(e => e.ToLowerInvariant()))) };
+    // Modification : pièces déjà enregistrées et non retirées (leur champ caché PiecesASupprimer est désactivé), comptées dans la limite.
+    const piecesConservees = () => [...document.querySelectorAll('#listePiecesExistantes input[name=PiecesASupprimer]')].filter(h => h.disabled).length;
+    const formaterTaille = o => o < 1048576 ? `${Math.max(1, Math.round(o / 1024))} Ko` : `${(o / 1048576).toFixed(1).replace('.', ',')} Mo`;
+    const erreurFichier = () => {
+        if (!fichier.files.length) return '';
+        const f = fichier.files[0];
+        const ext = f.name.includes('.') ? f.name.slice(f.name.lastIndexOf('.')).toLowerCase() : '';
+        if (!REGLES.extensions.includes(ext)) return `Ce type de fichier (${ext || 'sans extension'}) n'est pas autorisé.`;
+        if (f.size === 0) return 'Ce fichier est vide.';
+        if (f.size > REGLES.maxSize) return `Ce fichier fait ${formaterTaille(f.size)} (maximum ${formaterTaille(REGLES.maxSize)}).`;
+        if (liste.children.length + piecesConservees() >= REGLES.maxPieces) return `Vous ne pouvez pas joindre plus de ${REGLES.maxPieces} pièces.`;
+        const dejaAjoute = [...liste.querySelectorAll('input[type=file]')].reduce((somme, i) => somme + (i.files[0]?.size ?? 0), 0);
+        if (dejaAjoute + f.size > REGLES.maxTotal) return `Le total des pièces dépasserait ${formaterTaille(REGLES.maxTotal)}.`;
+        return '';
+    };
     const majBoutonPj = () => {
         $('blocPjPrecision').hidden = !natureAutre();
-        btnPj.disabled = !(fichier.files.length && nature.value && (!natureAutre() || precision.value.trim()));
+        const erreur = erreurFichier();
+        $('pjMessage').textContent = erreur;
+        $('pjMessage').hidden = !erreur;
+        btnPj.disabled = !!erreur || !(fichier.files.length && nature.value && (!natureAutre() || precision.value.trim()));
     };
     precision.addEventListener('input', majBoutonPj);
     fichier.addEventListener('change', majBoutonPj);
     nature.addEventListener('change', majBoutonPj);
+
+    // Pièces déjà enregistrées : « Retirer » / « Conserver » active ou désactive le champ caché PiecesASupprimer.
+    document.querySelectorAll('[data-bascule-retrait]').forEach(bouton => {
+        const li = bouton.closest('li'), champ = li.querySelector('input[name=PiecesASupprimer]');
+        const afficher = () => {
+            const retiree = !champ.disabled;
+            li.querySelector('.texte-piece').classList.toggle('text-decoration-line-through', retiree);
+            li.classList.toggle('opacity-50', retiree);
+            bouton.textContent = retiree ? 'Conserver' : 'Retirer';
+            bouton.className = 'btn btn-sm ' + (retiree ? 'btn-outline-secondary' : 'btn-outline-danger');
+        };
+        bouton.addEventListener('click', () => { champ.disabled = !champ.disabled; afficher(); majBoutonPj(); });
+        afficher();
+    });
     const reindexerPieces = () => [...liste.children].forEach((li, i) => {
         li.querySelector('input[type=file]').name = `Pieces[${i}].Fichier`;
         li.querySelectorAll('input[type=hidden]').forEach(h => h.name = `Pieces[${i}].${h.dataset.champ}`);
@@ -359,7 +439,7 @@
         bouton.addEventListener('click', () => { li.remove(); reindexerPieces(); });
         li.append(bouton);
         liste.append(li);
-        $('zoneFichier').append(ancien);
+        $('zoneFichier').prepend(ancien);
         ancien.id = 'pjFichier';
         ancien.addEventListener('change', majBoutonPj);
         fichier = ancien;
@@ -367,5 +447,24 @@
         nature.value = ''; precision.value = ''; $('blocPjPrecision').hidden = true;
         btnPj.disabled = true;
     });
+
+    // ----- Remplissage initial (modification, ou réaffichage après une erreur) -----
+    // Les listes dépendantes sont vides au chargement : on les remplit dans l'ordre, puis on y remet les valeurs.
+    const initial = donnees.initial;
+    if (initial.numCite) {
+        secteur.value = initial.secteur ?? '';
+        majCites();
+        cite.value = initial.numCite;
+        majRues().then(() => { if (initial.adresse) rue.value = initial.adresse; });
+    }
+    if (categorie.value) {
+        categorie.dispatchEvent(new Event('change'));     // libellé de la catégorie et liste des sous-catégories
+        for (const d of initial.details) {
+            const n = donnees.nuisances.find(x => x.codeNuisance === d.codeNuisance);
+            const s = n && donnees.sousCategories.find(x => x.codeSousCat === n.codeSousCat);
+            if (!n || !s) continue;
+            ajouterDetail($('detCategorie').value, s.codeSousCat, s.libSousCat ?? '', n.codeNuisance, n.libNuisance ?? '', d.cout ?? '');
+        }
+    }
 })();
 </script>

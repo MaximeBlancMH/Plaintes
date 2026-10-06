@@ -63,7 +63,11 @@ namespace Plaintes.Tests
             public Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte) => Task.FromResult(new Dictionary<string, string>());
         
             public Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail) => Task.FromResult(true);
-            public Task<string?> validerPlainte(CreatePlainteViewModel model) => Task.FromResult<string?>(null);
+            public CreatePlainteViewModel? Modifie { get; private set; }
+            public bool ResultatModification { get; set; } = true;
+            public string? ErreurValidation { get; set; }
+            public Task<bool> updatePlainte(CreatePlainteViewModel model) { Modifie = model; return Task.FromResult(ResultatModification); }
+            public Task<string?> validerPlainte(CreatePlainteViewModel model) => Task.FromResult(ErreurValidation);
             public Task AddPiecesAsync(int numPlainte, IEnumerable<PieceJointeViewModel> pieces, CancellationToken ct = default) => Task.CompletedTask;
         }
 
@@ -242,6 +246,152 @@ namespace Plaintes.Tests
             await AjouterPiece(new PieceJointe { NumPiece = 1, NumPlainte = 1, LibPiece = "a.pdf", TypePiece = "x", TaillePiece = "1", CheminPiece = "../../etc/passwd" });
 
             Assert.IsType<NotFoundResult>(await _controller.PieceJointeFichier(1));
+        }
+
+        // ---------- ModifierPlainte (GET et POST) ----------
+
+        private async Task AjouterPlainteComplete()
+        {
+            var cite = new Cite { NumCite = 1, LibCite = "Les Pins", Secteur = "Nord" };
+            var nuisance = new Nuisance { CodeNuisance = "N1", CodeSousCat = "S1", LibNuisance = "Musique" };
+            _ctx.AddRange(cite, nuisance, new NaturePiece { CodeNature = "FACT", LibNature = "Facture" });
+            _ctx.Plaintes.AddRange(
+                new Plainte
+                {
+                    NumPlainte = 1, NumReclamation = "123-456", CodEtat = "Ec", CodeFait = "AUTR", PrecisionFait = "Autre fait", CodePartieCommune = "PC1",
+                    NumCite = 1, CodeRue = 5, NumRue = "12", DateDeb = new DateOnly(2026, 1, 1), DateFin = new DateOnly(2026, 1, 3),
+                    Commentaire = "Bruit", CodeCat = "C1", NumCiteNavigation = cite
+                },
+                new Plainte { NumPlainte = 2, NumReclamation = "200-2", CodEtat = "Ec", CodePartieCommune = "PC1", CodeCat = "C1", Suppr = true });
+            _ctx.Composers.AddRange(
+                new Composer { NumDetail = 1, NumPlainte = 1, CodeNuisance = "N1", CodeNuisanceNavigation = nuisance, Cout = 80 },
+                new Composer { NumDetail = 2, NumPlainte = 1, CodeNuisance = "N1", CodeNuisanceNavigation = nuisance, Cout = 9999, SupprDet = true });
+            _ctx.PieceJointes.AddRange(
+                new PieceJointe { NumPiece = 1, NumPlainte = 1, LibPiece = "facture.pdf", TypePiece = "application/pdf", TaillePiece = "2 Ko", CodeNature = "FACT", Fichier = new byte[] { 1 } },
+                new PieceJointe { NumPiece = 2, NumPlainte = 1, LibPiece = "retiree.pdf", TypePiece = "application/pdf", TaillePiece = "1 Ko", SupprPj = true },
+                new PieceJointe { NumPiece = 3, NumPlainte = 1, LibPiece = null, TypePiece = "image/png", TaillePiece = "3 Ko" });
+            await _ctx.SaveChangesAsync();
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Inexistante_OuSupprimee_RenvoieNotFound()
+        {
+            await AjouterPlainteComplete();
+
+            Assert.IsType<NotFoundResult>(await _controller.ModifierPlainte(99));
+            Assert.IsType<NotFoundResult>(await _controller.ModifierPlainte(2));
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Get_RemplitLeFormulaireAvecLesDonneesDeLaPlainte()
+        {
+            await AjouterPlainteComplete();
+
+            var view = Assert.IsType<ViewResult>(await _controller.ModifierPlainte(1));
+            var model = Assert.IsType<CreatePlainteViewModel>(view.Model);
+
+            Assert.Equal("CreatePlainte", view.ViewName);
+            Assert.True(model.EstModification);
+            Assert.Equal(1, model.NumPlainte);
+            Assert.Equal("123-456", model.NumReclamation);
+            Assert.Equal("AUTR", model.CodeFait);
+            Assert.Equal("Autre fait", model.PrecisionFait);
+            Assert.Equal("PC1", model.CodePartieCommune);
+            Assert.Equal("Nord", model.Secteur);
+            Assert.Equal(1, model.NumCite);
+            Assert.Equal(5, model.CodeRue);
+            Assert.Equal("12", model.NumRue);
+            Assert.Equal(new DateOnly(2026, 1, 1), model.DateDeb);
+            Assert.Equal(new DateOnly(2026, 1, 3), model.DateFin);
+            Assert.Equal("Bruit", model.Commentaire);
+            Assert.Equal("C1", model.CodeCat);
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Get_ChargeLesDetailsNonSupprimes_AvecLaSousCategorie()
+        {
+            await AjouterPlainteComplete();
+
+            var model = (CreatePlainteViewModel)Assert.IsType<ViewResult>(await _controller.ModifierPlainte(1)).Model!;
+
+            var detail = Assert.Single(model.Details);
+            Assert.Equal("N1", detail.CodeNuisance);
+            Assert.Equal("S1", detail.CodeSousCat);
+            Assert.Equal(80, detail.Cout);
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Get_ListeLesPiecesNonSupprimees_SansLeurContenu()
+        {
+            await AjouterPlainteComplete();
+
+            var model = (CreatePlainteViewModel)Assert.IsType<ViewResult>(await _controller.ModifierPlainte(1)).Model!;
+
+            Assert.Equal(new[] { 1, 3 }, model.PiecesExistantes.Select(p => p.NumPiece));
+            Assert.Equal("facture.pdf", model.PiecesExistantes[0].Nom);
+            Assert.Equal("Facture", model.PiecesExistantes[0].Nature);
+            Assert.Equal("2 Ko", model.PiecesExistantes[0].Taille);
+            Assert.Equal("Pièce 3", model.PiecesExistantes[1].Nom);     // pas de libellé : numéro de la pièce
+            Assert.Empty(model.Pieces);                                  // les nouvelles pièces ne sont jamais préremplies
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Post_Valide_EnregistreEtRedirigeVersLaListe()
+        {
+            await AjouterPlainteComplete();
+
+            var result = await _controller.ModifierPlainte(1, new CreatePlainteViewModel { NumPlainte = 999 });
+
+            var redirect = Assert.IsType<RedirectToActionResult>(result);
+            Assert.Equal("Dossiers", redirect.ActionName);
+            Assert.Equal(1, _srv.Modifie!.NumPlainte);   // le n° vient de l'adresse, jamais de ce que le formulaire envoie
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Post_ErreurDeConformite_ReaffichePageSansEnregistrer()
+        {
+            await AjouterPlainteComplete();
+            _srv.ErreurValidation = "La date de début est obligatoire.";
+
+            var view = Assert.IsType<ViewResult>(await _controller.ModifierPlainte(1, new CreatePlainteViewModel()));
+            var model = Assert.IsType<CreatePlainteViewModel>(view.Model);
+
+            Assert.Null(_srv.Modifie);
+            Assert.Equal("CreatePlainte", view.ViewName);
+            Assert.Equal("La date de début est obligatoire.", model.Erreur);
+            Assert.Equal(new[] { 1, 3 }, model.PiecesExistantes.Select(p => p.NumPiece));   // rechargées pour réafficher la liste
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Post_ChampInvalide_ReaffichePageSansEnregistrer()
+        {
+            await AjouterPlainteComplete();
+            _controller.ModelState.AddModelError("DateDeb", "La date de début est obligatoire.");
+
+            var view = Assert.IsType<ViewResult>(await _controller.ModifierPlainte(1, new CreatePlainteViewModel()));
+
+            Assert.Null(_srv.Modifie);
+            Assert.Equal("La date de début est obligatoire.", ((CreatePlainteViewModel)view.Model!).Erreur);
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Post_EchecDEnregistrement_AfficheUneErreur()
+        {
+            await AjouterPlainteComplete();
+            _srv.ResultatModification = false;
+
+            var view = Assert.IsType<ViewResult>(await _controller.ModifierPlainte(1, new CreatePlainteViewModel()));
+
+            Assert.Contains("n'a pas pu être modifiée", ((CreatePlainteViewModel)view.Model!).Erreur);
+        }
+
+        [Fact]
+        public async Task ModifierPlainte_Post_PlainteDevenueInexistante_RenvoieNotFound()
+        {
+            _srv.ErreurValidation = "Ce dossier n'existe plus.";
+
+            Assert.IsType<NotFoundResult>(await _controller.ModifierPlainte(1, new CreatePlainteViewModel()));
+            Assert.Null(_srv.Modifie);
         }
     }
 }

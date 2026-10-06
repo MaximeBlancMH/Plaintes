@@ -1,10 +1,11 @@
-@* Page "Créer une plainte" : le formulaire lui-même est dans la vue partielle _Formulaire.cshtml. *@
+@* Page "Créer une plainte" / "Modifier la plainte" : le formulaire lui-même est dans la vue partielle _Formulaire.cshtml. *@
 @model CreatePlainteViewModel
 @{
-    ViewData["Title"] = "Créer une plainte";
+    var titre = Model.EstModification ? $"Modifier la plainte n° {Model.NumPlainte}" : "Créer une plainte";
+    ViewData["Title"] = titre;
 }
 
 <div class="my-4">
-    <h1 class="h3 mb-3 titre-mh">Créer une plainte</h1>
+    <h1 class="h3 mb-3 titre-mh">@titre</h1>
     <partial name="_Formulaire" model="Model" />
 </div>
