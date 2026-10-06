@@ -1,0 +1,43 @@
+@* Zone de test TEMPORAIRE, à placer en bas d'une page : <partial name="_ZoneTest" model="cas" /> avec une liste de CasTest.
+   Elle n'apparaît qu'en environnement Development : si on l'oublie, rien ne s'affiche en production.
+   Chaque bouton lance un cas précis (données invalides, élément inconnu...). Le survol indique le résultat attendu.
+   À supprimer une fois les essais terminés (il suffit de retirer les appels à ce partial). *@
+@model IEnumerable<CasTest>
+@inject IWebHostEnvironment Env
+@if (Env.IsDevelopment() && Model.Any())
+{
+    <div class="card shadow-sm card-mh mt-4 mb-4 border-warning zone-test">
+        <div class="card-header bg-warning-subtle fw-semibold">Zone de test (temporaire, visible uniquement en développement)</div>
+        <div class="card-body">
+            @foreach (var groupe in Model.GroupBy(c => c.Groupe))
+            {
+                <h2 class="h6 mt-2">@groupe.Key</h2>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @foreach (var cas in groupe)
+                    {
+                        if (cas.Script is not null)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-test="@cas.Script" title="@cas.Attendu">@cas.Libelle</button>
+                        }
+                        else if (string.Equals(cas.Methode, "POST", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <form method="post" action="@Url.Content(cas.Url)" class="m-0">
+                                @Html.AntiForgeryToken()
+                                @foreach (var champ in cas.Champs ?? Array.Empty<(string Nom, string Valeur)>())
+                                {
+                                    <input type="hidden" name="@champ.Nom" value="@champ.Valeur" />
+                                }
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="@cas.Attendu">@cas.Libelle</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <a class="btn btn-sm btn-outline-secondary" href="@Url.Content(cas.Url)" title="@cas.Attendu">@cas.Libelle</a>
+                        }
+                    }
+                </div>
+            }
+            <p class="small text-muted mb-0">Le survol d'un bouton indique le résultat attendu.</p>
+        </div>
+    </div>
+}

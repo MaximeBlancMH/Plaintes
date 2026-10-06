@@ -1,7 +1,6 @@
 @* Page "Gestion des utilisateurs" : liste de tous les utilisateurs de la base, avec ajout, modification et suppression.
    Les formulaires envoient un POST vers /Account/AddAccount, /Account/EditAccount et /Account/DeleteAccount (voir AccountController). *@
 @model List<Utilisateur>
-@inject IWebHostEnvironment Env
 @{
     ViewData["Title"] = "Gestion des utilisateurs";
     var emailConnecte = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
@@ -85,64 +84,33 @@
     <div class="card-footer text-muted small">@Model.Count utilisateur@(Model.Count > 1 ? "s" : "")</div>
 </div>
 
-@* ---------- Zone de test TEMPORAIRE (environnement Development uniquement) ----------
-   Chaque bouton envoie au contrôleur un cas précis (données invalides, utilisateur inconnu, son propre compte...) pour vérifier
-   les messages d'erreur. À supprimer une fois les essais terminés. *@
-@if (Env.IsDevelopment())
-{
+@* ---------- Zone de test TEMPORAIRE (Development uniquement) : voir Views/Shared/_ZoneTest.cshtml ---------- *@
+@{
     var moi = Model.FirstOrDefault(u => !string.IsNullOrEmpty(emailConnecte) && string.Equals(u.UserEmail, emailConnecte, StringComparison.OrdinalIgnoreCase));
     var autres = Model.Where(u => u.IdUser != moi?.IdUser && !string.IsNullOrWhiteSpace(u.UserEmail)).ToList();
     var cible = autres.FirstOrDefault() ?? moi;      // un utilisateur sur lequel essayer les modifications
     var emailExistant = (cible?.UserEmail ?? emailConnecte) ?? "";
     var emailUnique = $"test{DateTime.Now:yyyyMMddHHmmss}@test.fr";
+    var idCible = (cible?.IdUser ?? 0).ToString();
+    var idMoi = (moi?.IdUser ?? 0).ToString();
 
-    // (libellé, action, champs envoyés, résultat attendu)
-    var essais = new List<(string Groupe, string Libelle, string Action, string[][] Champs, string Attendu)>
+    var casUtilisateurs = new List<CasTest>
     {
-        ("Ajout", "Champs vides", "AddAccount", new[] { new[] { "name", "" }, new[] { "email", "" }, new[] { "role", "" } }, "Erreur : champs obligatoires"),
-        ("Ajout", "Droit invalide", "AddAccount", new[] { new[] { "name", "Test" }, new[] { "email", emailUnique }, new[] { "role", "X" } }, "Erreur : rôle invalide"),
-        ("Ajout", "E-mail déjà utilisé", "AddAccount", new[] { new[] { "name", "Test" }, new[] { "email", emailExistant }, new[] { "role", "R" } }, "Erreur : e-mail déjà utilisé"),
-        ("Ajout", "Ajout valide (crée « Utilisateur de test »)", "AddAccount", new[] { new[] { "name", "Utilisateur de test" }, new[] { "email", emailUnique }, new[] { "role", "R" } }, "Aucune erreur : une ligne est ajoutée"),
-        ("Modification", "Champs vides", "EditAccount", new[] { new[] { "id", (cible?.IdUser ?? 0).ToString() }, new[] { "name", "" }, new[] { "email", "" }, new[] { "role", "" } }, "Erreur : champs obligatoires"),
-        ("Modification", "Droit invalide", "EditAccount", new[] { new[] { "id", (cible?.IdUser ?? 0).ToString() }, new[] { "name", "Test" }, new[] { "email", cible?.UserEmail ?? emailUnique }, new[] { "role", "X" } }, "Erreur : rôle invalide"),
-        ("Modification", "E-mail d'un autre utilisateur", "EditAccount", new[] { new[] { "id", (moi?.IdUser ?? 0).ToString() }, new[] { "name", moi?.NomUser ?? "Test" }, new[] { "email", autres.FirstOrDefault()?.UserEmail ?? emailExistant }, new[] { "role", moi?.Access ?? "R" } }, "Erreur : e-mail déjà utilisé (il faut un autre utilisateur)"),
-        ("Modification", "Utilisateur inconnu", "EditAccount", new[] { new[] { "id", "0" }, new[] { "name", "Test" }, new[] { "email", emailUnique }, new[] { "role", "R" } }, "Page 404"),
-        ("Suppression", "Son propre compte", "DeleteAccount", new[] { new[] { "id", (moi?.IdUser ?? 0).ToString() } }, moi == null ? "Votre compte n'est pas dans la liste : page 404" : "Erreur : impossible de supprimer son propre compte"),
-        ("Suppression", "Utilisateur inconnu", "DeleteAccount", new[] { new[] { "id", "0" } }, "Page 404"),
+        new("Ajout", "Champs vides", "Erreur : champs obligatoires", "~/Account/AddAccount", "POST", new[] { ("name", ""), ("email", ""), ("role", "") }),
+        new("Ajout", "Droit invalide", "Erreur : rôle invalide", "~/Account/AddAccount", "POST", new[] { ("name", "Test"), ("email", emailUnique), ("role", "X") }),
+        new("Ajout", "E-mail déjà utilisé", "Erreur : e-mail déjà utilisé", "~/Account/AddAccount", "POST", new[] { ("name", "Test"), ("email", emailExistant), ("role", "R") }),
+        new("Ajout", "Ajout valide (crée « Utilisateur de test »)", "Aucune erreur : une ligne est ajoutée", "~/Account/AddAccount", "POST", new[] { ("name", "Utilisateur de test"), ("email", emailUnique), ("role", "R") }),
+        new("Modification", "Champs vides", "Erreur : champs obligatoires", "~/Account/EditAccount", "POST", new[] { ("id", idCible), ("name", ""), ("email", ""), ("role", "") }),
+        new("Modification", "Droit invalide", "Erreur : rôle invalide", "~/Account/EditAccount", "POST", new[] { ("id", idCible), ("name", "Test"), ("email", cible?.UserEmail ?? emailUnique), ("role", "X") }),
+        new("Modification", "E-mail d'un autre utilisateur", "Erreur : e-mail déjà utilisé (il faut un autre utilisateur)", "~/Account/EditAccount", "POST", new[] { ("id", idMoi), ("name", moi?.NomUser ?? "Test"), ("email", autres.FirstOrDefault()?.UserEmail ?? emailExistant), ("role", moi?.Access ?? "R") }),
+        new("Modification", "Utilisateur inconnu", "Page 404", "~/Account/EditAccount", "POST", new[] { ("id", "0"), ("name", "Test"), ("email", emailUnique), ("role", "R") }),
+        new("Suppression", "Son propre compte", moi == null ? "Votre compte n'est pas dans la liste : page 404" : "Erreur : impossible de supprimer son propre compte", "~/Account/DeleteAccount", "POST", new[] { ("id", idMoi) }),
+        new("Suppression", "Utilisateur inconnu", "Page 404", "~/Account/DeleteAccount", "POST", new[] { ("id", "0") }),
+        new("Accès", "Voir la page « accès refusé »", "Page « accès refusé » (code 403)", "~/Account/AccesRefuse"),
+        new("Accès", "Aller sur AccessDenied", "Redirige vers la page « accès refusé »", "~/Account/AccessDenied"),
     };
-
-    <div class="card shadow-sm card-mh mt-4 border-warning">
-        <div class="card-header bg-warning-subtle fw-semibold">Zone de test (temporaire, visible uniquement en développement)</div>
-        <div class="card-body">
-            @foreach (var groupe in essais.GroupBy(e => e.Groupe))
-            {
-                <h2 class="h6 mt-2">@groupe.Key</h2>
-                <div class="d-flex flex-wrap gap-2 mb-3">
-                    @foreach (var e in groupe)
-                    {
-                        <form method="post" action="@Url.Content("~/Account/" + e.Action)" class="m-0">
-                            @Html.AntiForgeryToken()
-                            @foreach (var champ in e.Champs)
-                            {
-                                <input type="hidden" name="@champ[0]" value="@champ[1]" />
-                            }
-                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="@e.Attendu">@e.Libelle</button>
-                        </form>
-                    }
-                </div>
-            }
-            <h2 class="h6 mt-2">Accès</h2>
-            <div class="d-flex flex-wrap gap-2 mb-2">
-                <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("AccesRefuse", "Account")" title="Page « accès refusé » (code 403)">Voir la page « accès refusé »</a>
-                <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("AccessDenied", "Account")" title="Doit rediriger vers la page « accès refusé »">Aller sur AccessDenied</a>
-            </div>
-            <p class="small text-muted mb-0">
-                Le survol d'un bouton indique le résultat attendu. Pour tester un compte inconnu, un compte supprimé ou des droits insuffisants,
-                il faut se connecter avec un autre compte (ou mettre une date de fin à son propre compte en base, puis se reconnecter).
-            </p>
-        </div>
-    </div>
 }
+<partial name="_ZoneTest" model="casUtilisateurs" />
 
 @* ---------- Modal ajout / modification (un seul formulaire, adapté par le script) ---------- *@
 <div class="modal fade" id="utilisateurModal" tabindex="-1" aria-labelledby="utilisateurModalLabel" aria-hidden="true">

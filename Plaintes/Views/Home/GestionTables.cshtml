@@ -1,0 +1,700 @@
+﻿@* Page « Gestion des tables ».
+   Deux blocs : Lieux (Cité -> Rue -> Bâtiment, et Partie commune) et Types (Catégorie -> Sous-catégorie -> Nuisance).
+   Une ligne par liste déroulante, avec un bouton « Ajouter » qui ouvre, sous la ligne, le formulaire d'ajout d'un élément rattaché à la
+   sélection du parent. Une liste reste grisée tant que son parent n'est pas choisi.
+   Pour l'instant, seul l'affichage existe : valider un formulaire montre un aperçu de ce qui serait créé (avec son parent), sans rien enregistrer. *@
+@model GestionTablesViewModel
+@{
+    ViewData["Title"] = "Gestion des tables";
+
+    // Un lien « cité -> rue » existe soit dans cite_rue, soit parce qu'un bâtiment de la cité a une adresse dans cette rue.
+    var batimentParId = Model.Batiments.ToDictionary(b => b.IdBat);
+    var liensCiteRue = Model.CiteRues.Select(cr => new { cite = cr.NumCite, rue = cr.CodeRue })
+        .Concat(Model.BatimentRues.Where(br => batimentParId.ContainsKey(br.IdBat))
+            .Select(br => new { cite = batimentParId[br.IdBat].NumCite, rue = br.CodeRue }))
+        .Distinct()
+        .ToList();
+
+    var donnees = new
+    {
+        cites = Model.Cites.OrderBy(c => c.LibCite).Select(c => new { id = c.NumCite, lib = c.LibCite, secteur = c.Secteur }),
+        rues = Model.Rues.OrderBy(r => r.LibRue).Select(r => new { id = r.CodeRue, lib = r.LibRue, cp = r.Cp, ville = r.Ville }),
+        citeRues = liensCiteRue,
+        batiments = Model.Batiments.OrderBy(b => b.NumBat).Select(b => new { id = b.IdBat, cite = b.NumCite, num = b.NumBat, lib = b.LibBat, tranche = b.CodeTranche }),
+        batimentRues = Model.BatimentRues.Select(br => new { bat = br.IdBat, rue = br.CodeRue, num = br.NumRue }),
+        partiesCommunes = Model.PartieCommunes.Where(p => !p.SupprPc).OrderBy(p => p.LibPartieCommune).Select(p => new { code = p.CodePartieCommune, lib = p.LibPartieCommune }),
+        categories = Model.Categories.Where(c => !c.SupprCat).OrderBy(c => c.LibCat).Select(c => new { code = c.CodeCat, lib = c.LibCat }),
+        sousCategories = Model.SousCategories.Where(s => !s.SupprSousCat).OrderBy(s => s.LibSousCat).Select(s => new { code = s.CodeSousCat, cat = s.CodeCat, lib = s.LibSousCat }),
+        nuisances = Model.Nuisances.Where(n => !n.SupprNuisance).OrderBy(n => n.LibNuisance).Select(n => new { code = n.CodeNuisance, sousCat = n.CodeSousCat, lib = n.LibNuisance })
+    };
+
+    // Zone de test TEMPORAIRE (Development uniquement) : voir Views/Shared/_ZoneTest.cshtml. Les cas sont joués par le script de la page.
+    var casTables = new List<CasTest>
+    {
+        new("Sélection par parent", "Parcours Cité → Rue → Bâtiment", "Les trois listes se remplissent l'une après l'autre", Script: "parcoursLieux"),
+        new("Sélection par parent", "Cité sans aucune rue", "La liste des rues indique « Aucune rue » et le bâtiment reste grisé", Script: "citeSansRue"),
+        new("Sélection par parent", "Changer de cité après avoir choisi une rue", "La rue et le bâtiment sont remis à zéro", Script: "changerCite"),
+        new("Sélection par parent", "Parcours Catégorie → Sous-catégorie → Nuisance", "Les trois listes se remplissent l'une après l'autre", Script: "parcoursTypes"),
+        new("Sélection par parent", "Catégorie sans sous-catégorie", "La liste des sous-catégories indique « Aucune sous-catégorie »", Script: "catSansSousCat"),
+        new("Sélection par parent", "Tout remettre à zéro", "Toutes les listes reviennent à « Choisir »", Script: "toutVider"),
+        new("Formulaires d'ajout (aperçu seulement)", "Rue : formulaire vide", "Le navigateur signale le champ obligatoire", Script: "rueVide"),
+        new("Formulaires d'ajout (aperçu seulement)", "Cité : secteur « Autre »", "Le champ de saisie apparaît ; aperçu avec le secteur en majuscules", Script: "citeAutre"),
+        new("Formulaires d'ajout (aperçu seulement)", "Rue valide (rattachée à la cité)", "Aperçu avec NumCite du parent", Script: "rueValide"),
+        new("Formulaires d'ajout (aperçu seulement)", "Bâtiment valide (cité + rue)", "Aperçu avec NumCite et CodeRue du parent", Script: "batValide"),
+        new("Formulaires d'ajout (aperçu seulement)", "Nuisance valide (sous-catégorie)", "Aperçu avec CodeSousCat du parent", Script: "nuisanceValide"),
+        new("Ajout (enregistre vraiment si valide)", "Cité : champs vides", "Erreur : « Libellé » est obligatoire", "~/Home/addElement", "POST", new[] { ("cat", "Cite") }),
+        new("Ajout (enregistre vraiment si valide)", "Rue : cité inexistante", "Erreur : la cité choisie n'existe pas", "~/Home/addElement", "POST", new[] { ("cat", "Rue"), ("LibRue", "Rue de test"), ("Cp", "71000"), ("Ville", "Mâcon"), ("NumCite", "0") }),
+        new("Ajout (enregistre vraiment si valide)", "Catégorie : code déjà utilisé", "Erreur : ce code existe déjà (« Code obligatoire » s'il n'y a aucune catégorie)", "~/Home/addElement", "POST", new[] { ("cat", "Categorie"), ("CodeCat", Model.Categories.FirstOrDefault()?.CodeCat ?? ""), ("LibCat", "Doublon") }),
+        new("Ajout (enregistre vraiment si valide)", "Type d'élément inconnu", "Erreur : type d'élément inconnu", "~/Home/addElement", "POST", new[] { ("cat", "Truc") }),
+        new("Suppression", "Cité inconnue (id 0)", "Erreur : élément introuvable", "~/Home/deleteElement", "POST", new[] { ("cat", "Cite"), ("code", "0") }),
+        new("Suppression", "Identifiant invalide (abc)", "Erreur : identifiant invalide", "~/Home/deleteElement", "POST", new[] { ("cat", "Rue"), ("code", "abc") }),
+        new("Suppression", "Type d'élément inconnu", "Erreur : type d'élément inconnu", "~/Home/deleteElement", "POST", new[] { ("cat", "Truc"), ("code", "1") }),
+    };
+}
+
+<h1 class="h3 my-4 titre-mh">Gestion des tables</h1>
+
+@* Message affiché par le script après une suppression (sans rechargement de la page). *@
+<div id="zoneMessages"></div>
+
+@* Résultat de la dernière action (ajout ou suppression), laissé par le contrôleur avant la redirection. *@
+@if (TempData["Erreur"] is string erreur && !string.IsNullOrWhiteSpace(erreur))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @erreur
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+    </div>
+}
+@if (TempData["Succes"] is string succes && !string.IsNullOrWhiteSpace(succes))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @succes
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+    </div>
+}
+
+@* ======================== Lieux ======================== *@
+<section class="card shadow-sm card-mh mb-4 groupe">
+    <div class="card-header h5 mb-0">Lieux</div>
+    <div class="card-body">
+
+        <div class="ligne py-2">
+            <div class="row g-2 align-items-center">
+                <label class="col-sm-3 col-form-label" for="selCite">Cité</label>
+                <div class="col-sm-6"><select id="selCite" class="form-select" data-vide="Choisir une cité" data-aucun="Aucune cité"></select></div>
+                <div class="col-sm-3 d-flex gap-1"><button type="button" class="btn btn-outline-mh btn-sm" data-ouvre="formCite">Ajouter</button><button type="button" class="btn btn-outline-danger btn-sm" data-supprime="selCite" data-cat="Cite" disabled>Supprimer</button></div>
+            </div>
+            <form id="formCite" class="form-ajout bg-light border rounded p-3 mt-2" data-entite="cité" data-nom-entite="Cite" hidden>
+                <div class="fw-semibold mb-2 titre-ajout"></div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small mb-1">Libellé</label>
+                        <input name="LibCite" class="form-control form-control-sm" maxlength="100" required />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1" for="secteurChoix">Secteur</label>
+                        <select id="secteurChoix" class="form-select form-select-sm" required>
+                            <option value="">— Choisir —</option>
+                            <option value="CENTRE">CENTRE</option>
+                            <option value="SUD">SUD</option>
+                            <option value="AUTRE">Autre…</option>
+                        </select>
+                        @* Si « Autre » : le secteur est saisi ici. Le champ caché Secteur porte la valeur finale. *@
+                        <input id="secteurAutre" class="form-control form-control-sm mt-2 text-uppercase" maxlength="10" placeholder="Précisez le secteur" hidden />
+                        <input type="hidden" name="Secteur" id="secteurFinal" />
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-mh btn-sm">Valider</button>
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-annule="formCite">Annuler</button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
+        </div>
+
+        <div class="ligne py-2 border-top">
+            <div class="row g-2 align-items-center">
+                <label class="col-sm-3 col-form-label" for="selRue">Rue</label>
+                <div class="col-sm-6"><select id="selRue" class="form-select" data-vide="Choisir une rue" data-aucun="Aucune rue pour cette cité" data-attendu="une cité"></select></div>
+                <div class="col-sm-3 d-flex gap-1"><button type="button" class="btn btn-outline-mh btn-sm" data-ouvre="formRue">Ajouter</button><button type="button" class="btn btn-outline-danger btn-sm" data-supprime="selRue" data-cat="Rue" disabled>Supprimer</button></div>
+            </div>
+            <form id="formRue" class="form-ajout bg-light border rounded p-3 mt-2" data-entite="rue" data-nom-entite="Rue"
+                  data-parents='[{"champ":"NumCite","select":"selCite","nom":"cité"}]' hidden>
+                <div class="fw-semibold mb-2 titre-ajout"></div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small mb-1">Libellé</label>
+                        <input name="LibRue" class="form-control form-control-sm" maxlength="150" required />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Code postal</label>
+                        <input name="Cp" class="form-control form-control-sm" maxlength="50" required />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Ville</label>
+                        <input name="Ville" class="form-control form-control-sm" maxlength="50" required />
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-mh btn-sm">Valider</button>
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-annule="formRue">Annuler</button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
+        </div>
+
+        <div class="ligne py-2 border-top">
+            <div class="row g-2 align-items-center">
+                <label class="col-sm-3 col-form-label" for="selBat">Bâtiment</label>
+                <div class="col-sm-6"><select id="selBat" class="form-select" data-vide="Choisir un bâtiment" data-aucun="Aucun bâtiment pour cette rue" data-attendu="une rue"></select></div>
+                <div class="col-sm-3 d-flex gap-1"><button type="button" class="btn btn-outline-mh btn-sm" data-ouvre="formBat">Ajouter</button><button type="button" class="btn btn-outline-danger btn-sm" data-supprime="selBat" data-cat="Batiment" disabled>Supprimer</button></div>
+            </div>
+            <form id="formBat" class="form-ajout bg-light border rounded p-3 mt-2" data-entite="bâtiment" data-article="un" data-nom-entite="Batiment"
+                  data-parents='[{"champ":"NumCite","select":"selCite","nom":"cité"},{"champ":"CodeRue","select":"selRue","nom":"rue"}]' hidden>
+                <div class="fw-semibold mb-2 titre-ajout"></div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">N° de bâtiment</label>
+                        <input name="NumBat" class="form-control form-control-sm" maxlength="11" required />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">N° dans la rue</label>
+                        <input name="NumRue" class="form-control form-control-sm" maxlength="50" required />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Libellé <span class="text-muted">(facultatif)</span></label>
+                        <input name="LibBat" class="form-control form-control-sm" maxlength="50" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Tranche</label>
+                        <input name="CodeTranche" class="form-control form-control-sm" maxlength="5" />
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-mh btn-sm">Valider</button>
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-annule="formBat">Annuler</button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
+        </div>
+
+        <div class="ligne py-2 border-top">
+            <div class="row g-2 align-items-center">
+                <label class="col-sm-3 col-form-label" for="selPc">Partie commune</label>
+                <div class="col-sm-6"><select id="selPc" class="form-select" data-vide="Choisir une partie commune" data-aucun="Aucune partie commune"></select></div>
+                <div class="col-sm-3 d-flex gap-1"><button type="button" class="btn btn-outline-mh btn-sm" data-ouvre="formPc">Ajouter</button><button type="button" class="btn btn-outline-danger btn-sm" data-supprime="selPc" data-cat="PartieCommune" disabled>Supprimer</button></div>
+            </div>
+            <form id="formPc" class="form-ajout bg-light border rounded p-3 mt-2" data-entite="partie commune" data-nom-entite="PartieCommune" hidden>
+                <div class="fw-semibold mb-2 titre-ajout"></div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Code</label>
+                        <input name="CodePartieCommune" class="form-control form-control-sm text-uppercase" maxlength="4" required />
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label small mb-1">Libellé</label>
+                        <input name="LibPartieCommune" class="form-control form-control-sm" maxlength="50" required />
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-mh btn-sm">Valider</button>
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-annule="formPc">Annuler</button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
+        </div>
+    </div>
+</section>
+
+@* ======================== Types ======================== *@
+<section class="card shadow-sm card-mh mb-4 groupe">
+    <div class="card-header h5 mb-0">Types</div>
+    <div class="card-body">
+
+        <div class="ligne py-2">
+            <div class="row g-2 align-items-center">
+                <label class="col-sm-3 col-form-label" for="selCat">Catégorie</label>
+                <div class="col-sm-6"><select id="selCat" class="form-select" data-vide="Choisir une catégorie" data-aucun="Aucune catégorie"></select></div>
+                <div class="col-sm-3 d-flex gap-1"><button type="button" class="btn btn-outline-mh btn-sm" data-ouvre="formCat">Ajouter</button><button type="button" class="btn btn-outline-danger btn-sm" data-supprime="selCat" data-cat="Categorie" disabled>Supprimer</button></div>
+            </div>
+            <form id="formCat" class="form-ajout bg-light border rounded p-3 mt-2" data-entite="catégorie" data-nom-entite="Categorie" hidden>
+                <div class="fw-semibold mb-2 titre-ajout"></div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Code</label>
+                        <input name="CodeCat" class="form-control form-control-sm text-uppercase" maxlength="4" required />
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label small mb-1">Libellé</label>
+                        <input name="LibCat" class="form-control form-control-sm" maxlength="100" required />
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-mh btn-sm">Valider</button>
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-annule="formCat">Annuler</button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
+        </div>
+
+        <div class="ligne py-2 border-top">
+            <div class="row g-2 align-items-center">
+                <label class="col-sm-3 col-form-label" for="selSousCat">Sous-catégorie</label>
+                <div class="col-sm-6"><select id="selSousCat" class="form-select" data-vide="Choisir une sous-catégorie" data-aucun="Aucune sous-catégorie pour cette catégorie" data-attendu="une catégorie"></select></div>
+                <div class="col-sm-3 d-flex gap-1"><button type="button" class="btn btn-outline-mh btn-sm" data-ouvre="formSousCat">Ajouter</button><button type="button" class="btn btn-outline-danger btn-sm" data-supprime="selSousCat" data-cat="SousCategorie" disabled>Supprimer</button></div>
+            </div>
+            <form id="formSousCat" class="form-ajout bg-light border rounded p-3 mt-2" data-entite="sous-catégorie" data-nom-entite="SousCategorie"
+                  data-parents='[{"champ":"CodeCat","select":"selCat","nom":"catégorie"}]' hidden>
+                <div class="fw-semibold mb-2 titre-ajout"></div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Code</label>
+                        <input name="CodeSousCat" class="form-control form-control-sm text-uppercase" maxlength="5" required />
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label small mb-1">Libellé</label>
+                        <input name="LibSousCat" class="form-control form-control-sm" maxlength="150" required />
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-mh btn-sm">Valider</button>
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-annule="formSousCat">Annuler</button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
+        </div>
+
+        <div class="ligne py-2 border-top">
+            <div class="row g-2 align-items-center">
+                <label class="col-sm-3 col-form-label" for="selNuisance">Nuisance</label>
+                <div class="col-sm-6"><select id="selNuisance" class="form-select" data-vide="Choisir une nuisance" data-aucun="Aucune nuisance pour cette sous-catégorie" data-attendu="une sous-catégorie"></select></div>
+                <div class="col-sm-3 d-flex gap-1"><button type="button" class="btn btn-outline-mh btn-sm" data-ouvre="formNuisance">Ajouter</button><button type="button" class="btn btn-outline-danger btn-sm" data-supprime="selNuisance" data-cat="Nuisance" disabled>Supprimer</button></div>
+            </div>
+            <form id="formNuisance" class="form-ajout bg-light border rounded p-3 mt-2" data-entite="nuisance" data-nom-entite="Nuisance"
+                  data-parents='[{"champ":"CodeSousCat","select":"selSousCat","nom":"sous-catégorie"}]' hidden>
+                <div class="fw-semibold mb-2 titre-ajout"></div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Code</label>
+                        <input name="CodeNuisance" class="form-control form-control-sm text-uppercase" maxlength="5" required />
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label small mb-1">Libellé</label>
+                        <input name="LibNuisance" class="form-control form-control-sm" maxlength="100" required />
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-mh btn-sm">Valider</button>
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-annule="formNuisance">Annuler</button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
+        </div>
+    </div>
+</section>
+
+@* Jeton anti-falsification : le script le copie dans les formulaires d'ajout. *@
+<div hidden>@Html.AntiForgeryToken()</div>
+
+@* Confirmation de suppression : un seul modal pour toutes les listes, rempli par le script. *@
+<div class="modal fade" id="supprimerElementModal" tabindex="-1" aria-labelledby="supprimerElementLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header modal-header-danger">
+                <h5 class="modal-title" id="supprimerElementLabel">Supprimer l'élément</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <form method="post" class="m-0" action="@Url.Action("deleteElement", "Home")">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="cat" id="supprimerElementCat" />
+                <input type="hidden" name="code" id="supprimerElementCode" />
+                <div class="modal-body">
+                    <p class="mb-0">Voulez-vous vraiment supprimer <strong id="supprimerElementNom"></strong> ?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-danger">Supprimer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<partial name="_ZoneTest" model="casTables" />
+
+<script type="application/json" id="donneesTables">@Html.Raw(Json.Serialize(donnees))</script>
+
+@section Scripts {
+<script>
+(function () {
+    const d = JSON.parse(document.getElementById('donneesTables').textContent);
+    const $ = id => document.getElementById(id);
+    const texte = (...morceaux) => morceaux.filter(m => m !== null && m !== undefined && String(m).trim() !== '').join(' ');
+
+    // ---------- Listes déroulantes ----------
+    // Chaque liste commence par une entrée non sélectionnable en pratique (valeur vide) qui dit quoi faire :
+    // « Choisir ... », « Choisir d'abord une cité » (liste grisée) ou « Aucune rue pour cette cité » (parent sans enfant).
+    function remplir(select, items, valeur, libelle) {
+        select.innerHTML = '';
+        const vide = document.createElement('option');
+        vide.value = '';
+        vide.textContent = '— ' + (items.length ? select.dataset.vide : select.dataset.aucun) + ' —';
+        select.append(vide);
+        for (const i of items) {
+            const o = document.createElement('option');
+            o.value = i[valeur]; o.textContent = libelle(i);
+            select.append(o);
+        }
+    }
+    function vider(select) {
+        select.innerHTML = '';
+        const vide = document.createElement('option');
+        vide.value = ''; vide.textContent = '— Choisir d\'abord ' + select.dataset.attendu + ' —';
+        select.append(vide);
+        select.disabled = true;
+    }
+
+    const selCite = $('selCite'), selRue = $('selRue'), selBat = $('selBat'), selPc = $('selPc');
+    const selCat = $('selCat'), selSousCat = $('selSousCat'), selNuisance = $('selNuisance');
+    const libelleRue = r => texte(r.lib, r.cp, r.ville) || ('Rue ' + r.id);
+
+    // Listes racines ou indépendantes (des fonctions : on les remplit aussi après une suppression)
+    const remplirCites = () => remplir(selCite, d.cites, 'id', c => texte(c.lib, c.secteur ? '(' + c.secteur + ')' : '') || ('Cité ' + c.id));
+    const remplirPc = () => remplir(selPc, d.partiesCommunes, 'code', p => texte(p.code, '–', p.lib));
+    const remplirCats = () => remplir(selCat, d.categories, 'code', c => texte(c.code, '–', c.lib));
+    remplirCites(); remplirPc(); remplirCats();
+    vider(selRue); vider(selBat); vider(selSousCat); vider(selNuisance);
+
+    // Cité -> Rue
+    selCite.addEventListener('change', () => {
+        vider(selBat);
+        if (!selCite.value) { vider(selRue); majFormulaires(); return; }
+        const ids = new Set(d.citeRues.filter(l => l.cite === Number(selCite.value)).map(l => l.rue));
+        remplir(selRue, d.rues.filter(r => ids.has(r.id)), 'id', libelleRue);
+        selRue.disabled = false;
+        majFormulaires();
+    });
+
+    // Rue (de la cité) -> Bâtiment (de la cité, qui a une adresse dans cette rue)
+    selRue.addEventListener('change', () => {
+        if (!selRue.value) { vider(selBat); majFormulaires(); return; }
+        const cite = Number(selCite.value), rue = Number(selRue.value);
+        const parBat = new Map(d.batimentRues.filter(br => br.rue === rue).map(br => [br.bat, br.num]));
+        const bats = d.batiments.filter(b => b.cite === cite && parBat.has(b.id));
+        remplir(selBat, bats, 'id', b => texte(b.num, b.lib ? '– ' + b.lib : '', '(n° ' + parBat.get(b.id) + ' dans la rue)'));
+        selBat.disabled = false;
+        majFormulaires();
+    });
+    selBat.addEventListener('change', majFormulaires);
+
+    // Catégorie -> Sous-catégorie -> Nuisance
+    selCat.addEventListener('change', () => {
+        vider(selNuisance);
+        if (!selCat.value) { vider(selSousCat); majFormulaires(); return; }
+        remplir(selSousCat, d.sousCategories.filter(s => s.cat === selCat.value), 'code', s => texte(s.code, '–', s.lib));
+        selSousCat.disabled = false;
+        majFormulaires();
+    });
+    selSousCat.addEventListener('change', () => {
+        if (!selSousCat.value) { vider(selNuisance); majFormulaires(); return; }
+        remplir(selNuisance, d.nuisances.filter(n => n.sousCat === selSousCat.value), 'code', n => texte(n.code, '–', n.lib));
+        selNuisance.disabled = false;
+        majFormulaires();
+    });
+
+    // ---------- Formulaires d'ajout ----------
+    // Chaque bouton « Ajouter » (data-ouvre) ouvre le formulaire de sa ligne et referme les autres du même bloc.
+    // data-parents : les listes dont une valeur doit être choisie. Sans elle, le bouton est grisé ; avec elle, le titre nomme le parent.
+    const formulaires = [...document.querySelectorAll('.form-ajout')];
+    const parentsDe = f => JSON.parse(f.dataset.parents || '[]');
+    const libelleChoisi = select => select.selectedOptions.length ? select.selectedOptions[0].textContent : '';
+    const boutonDe = f => document.querySelector('[data-ouvre="' + f.id + '"]');
+    const apercuDe = f => f.closest('.ligne').querySelector('.apercu');
+
+    function majFormulaires() {
+        majSuppression();
+        for (const f of formulaires) {
+            const parents = parentsDe(f);
+            const manquant = parents.find(p => !$(p.select).value);
+            const bouton = boutonDe(f);
+            bouton.disabled = !!manquant;
+            bouton.title = manquant ? 'Choisissez d\'abord une ' + manquant.nom : '';
+            if (manquant) f.hidden = true;     // le parent a été désélectionné : le formulaire se referme
+            f.querySelector('.titre-ajout').textContent =
+                'Ajouter ' + (f.dataset.article ?? 'une') + ' ' + f.dataset.entite +
+                (!manquant && parents.length ? ' — ' + parents.map(p => p.nom + ' « ' + libelleChoisi($(p.select)) + ' »').join(', ') : '');
+        }
+    }
+
+    // ---------- Suppression ----------
+    // Le bouton « Supprimer » d'une ligne est actif quand un élément est choisi dans sa liste ; il ouvre la fenêtre de confirmation.
+    const boutonsSuppression = [...document.querySelectorAll('[data-supprime]')];
+    function majSuppression() {
+        for (const b of boutonsSuppression) b.disabled = !$(b.dataset.supprime).value;
+    }
+    // Les listes sans enfant (partie commune, nuisance) ne passent pas par majFormulaires : leur bouton se met à jour ici.
+    selPc.addEventListener('change', majSuppression);
+    selNuisance.addEventListener('change', majSuppression);
+    for (const b of boutonsSuppression) b.addEventListener('click', () => {
+        const select = $(b.dataset.supprime);
+        $('supprimerElementCat').value = b.dataset.cat;
+        $('supprimerElementCode').value = select.value;
+        $('supprimerElementNom').textContent = '« ' + libelleChoisi(select) + ' »';
+        bootstrap.Modal.getOrCreateInstance($('supprimerElementModal')).show();
+    });
+
+    // La suppression se fait sans recharger la page : seule la liste de l'élément supprimé (et celles qui en dépendent) est remise à zéro ;
+    // le reste de la sélection est conservé (supprimer un bâtiment garde la cité et la rue choisies).
+    const retirer = (liste, cle, valeur) => { const i = liste.findIndex(x => String(x[cle]) === valeur); if (i >= 0) liste.splice(i, 1); };
+    const apresSuppression = {
+        Cite: v => { retirer(d.cites, 'id', v); d.citeRues = d.citeRues.filter(l => String(l.cite) !== v); remplirCites(); vider(selRue); vider(selBat); },
+        Rue: v => { retirer(d.rues, 'id', v); d.citeRues = d.citeRues.filter(l => String(l.rue) !== v); selCite.dispatchEvent(new Event('change')); },
+        Batiment: v => { retirer(d.batiments, 'id', v); d.batimentRues = d.batimentRues.filter(b => String(b.bat) !== v); selRue.dispatchEvent(new Event('change')); },
+        PartieCommune: v => { retirer(d.partiesCommunes, 'code', v); remplirPc(); },
+        Categorie: v => { retirer(d.categories, 'code', v); remplirCats(); vider(selSousCat); vider(selNuisance); },
+        SousCategorie: v => { retirer(d.sousCategories, 'code', v); selCat.dispatchEvent(new Event('change')); },
+        Nuisance: v => { retirer(d.nuisances, 'code', v); selSousCat.dispatchEvent(new Event('change')); }
+    };
+
+    // Un message se ferme tout seul au bout de 10 secondes, s'il n'a pas été fermé à la main.
+    const DELAI_MESSAGE = 10000;
+    function fermerApresDelai(alerte) {
+        setTimeout(() => { if (alerte.isConnected) bootstrap.Alert.getOrCreateInstance(alerte).close(); }, DELAI_MESSAGE);
+    }
+    document.querySelectorAll('.alert-dismissible').forEach(fermerApresDelai);     // messages laissés par le serveur (page rechargée)
+
+    // Après un ajout : l'élément créé est ajouté aux données de la page, puis seule la liste concernée est rafraîchie.
+    // Les listes racines gardent leur sélection ; les listes enfants sont remises à « Choisir » (le parent reste choisi).
+    const trier = (liste, cle) => liste.sort((a, b) => String(a[cle] ?? '').localeCompare(String(b[cle] ?? ''), 'fr'));
+    const rafraichirEnGardantLaSelection = (select, remplissage) => { const valeur = select.value; remplissage(); select.value = valeur; majSuppression(); };
+    const apresAjout = {
+        Cite: e => { d.cites.push({ id: e.id, lib: e.lib, secteur: e.secteur }); trier(d.cites, 'lib'); rafraichirEnGardantLaSelection(selCite, remplirCites); },
+        Rue: e => {
+            d.rues.push({ id: e.id, lib: e.lib, cp: e.cp, ville: e.ville }); trier(d.rues, 'lib');
+            d.citeRues.push({ cite: e.cite, rue: e.id });
+            selCite.dispatchEvent(new Event('change'));
+        },
+        Batiment: e => {
+            d.batiments.push({ id: e.id, cite: e.cite, num: e.num, lib: e.lib, tranche: e.tranche }); trier(d.batiments, 'num');
+            d.batimentRues.push({ bat: e.id, rue: e.rue, num: e.numRue });
+            selRue.dispatchEvent(new Event('change'));
+        },
+        PartieCommune: e => { d.partiesCommunes.push({ code: e.code, lib: e.lib }); trier(d.partiesCommunes, 'lib'); rafraichirEnGardantLaSelection(selPc, remplirPc); },
+        Categorie: e => { d.categories.push({ code: e.code, lib: e.lib }); trier(d.categories, 'lib'); rafraichirEnGardantLaSelection(selCat, remplirCats); },
+        SousCategorie: e => { d.sousCategories.push({ code: e.code, cat: e.cat, lib: e.lib }); trier(d.sousCategories, 'lib'); selCat.dispatchEvent(new Event('change')); },
+        Nuisance: e => { d.nuisances.push({ code: e.code, sousCat: e.sousCat, lib: e.lib }); trier(d.nuisances, 'lib'); selSousCat.dispatchEvent(new Event('change')); }
+    };
+
+    function afficherMessage(ok, texteMessage) {
+        const zone = $('zoneMessages');
+        zone.innerHTML = '';
+        const alerte = document.createElement('div');
+        alerte.className = 'alert alert-dismissible fade show ' + (ok ? 'alert-success' : 'alert-danger');
+        alerte.setAttribute('role', 'alert');
+        alerte.textContent = texteMessage;
+        const fermer = document.createElement('button');
+        fermer.type = 'button'; fermer.className = 'btn-close'; fermer.setAttribute('data-bs-dismiss', 'alert'); fermer.setAttribute('aria-label', 'Fermer');
+        alerte.append(fermer);
+        zone.append(alerte);
+        fermerApresDelai(alerte);
+        window.scrollTo({ top: 0, behavior: 'smooth' });     // le message est en haut de la page
+    }
+
+    $('supprimerElementModal').querySelector('form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        const cat = $('supprimerElementCat').value, code = $('supprimerElementCode').value;
+        bootstrap.Modal.getOrCreateInstance($('supprimerElementModal')).hide();
+        try {
+            const reponse = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const resultat = await reponse.json();
+            afficherMessage(resultat.ok, resultat.message);
+            if (resultat.ok) { apresSuppression[cat]?.(code); majFormulaires(); }
+        } catch {
+            afficherMessage(false, 'La suppression a échoué (connexion perdue ou session expirée). Rechargez la page.');
+        }
+    });
+
+    function ouvrir(f) {
+        f.closest('.groupe').querySelectorAll('.form-ajout').forEach(autre => { if (autre !== f) autre.hidden = true; });
+        apercuDe(f).hidden = true;
+        f.hidden = false;
+        f.querySelector('input:not([type=hidden])')?.focus();
+    }
+    document.querySelectorAll('[data-ouvre]').forEach(bouton => bouton.addEventListener('click', () => {
+        const f = $(bouton.dataset.ouvre);
+        if (f.hidden) ouvrir(f); else f.hidden = true;
+    }));
+    document.querySelectorAll('[data-annule]').forEach(bouton => bouton.addEventListener('click', () => $(bouton.dataset.annule).hidden = true));
+
+    // Secteur d'une cité : CENTRE, SUD ou autre (alors saisi à la main). Le champ caché Secteur porte la valeur finale.
+    const secteurChoix = $('secteurChoix'), secteurAutre = $('secteurAutre'), secteurFinal = $('secteurFinal');
+    const majSecteur = () => {
+        const autre = secteurChoix.value === 'AUTRE';
+        secteurAutre.hidden = !autre;
+        secteurAutre.required = autre;
+        if (!autre) secteurAutre.value = '';
+        secteurFinal.value = autre ? secteurAutre.value.trim().toUpperCase() : secteurChoix.value;
+    };
+    secteurChoix.addEventListener('change', () => { majSecteur(); if (!secteurAutre.hidden) secteurAutre.focus(); });
+    secteurAutre.addEventListener('input', majSecteur);
+
+    // Chaque formulaire envoie un vrai POST vers addElement : on lui donne son adresse, son type (cat) et le jeton anti-falsification.
+    const jeton = document.querySelector('input[name="__RequestVerificationToken"]');
+    for (const f of formulaires) {
+        f.method = 'post';
+        f.action = '@Url.Action("addElement", "Home")';
+        for (const [nom, valeur] of [['cat', f.dataset.nomEntite]]) {
+            const h = document.createElement('input'); h.type = 'hidden'; h.name = nom; h.value = valeur; f.append(h);
+        }
+        f.append(jeton.cloneNode());
+    }
+
+    // Les parents choisis (NumCite, CodeRue, CodeCat...) ne sont pas des champs du formulaire : on les ajoute à l'envoi.
+    // L'ajout se fait sans recharger la page : la réponse (JSON) contient l'élément créé, qui est ajouté aux listes de la page.
+    async function envoyer(f) {
+        const donneesForm = new FormData(f);
+        for (const p of parentsDe(f)) donneesForm.set(p.champ, $(p.select).value);
+        const valider = f.querySelector('[type=submit]');
+        valider.disabled = true;      // évite un double envoi
+        try {
+            const reponse = await fetch(f.action, { method: 'POST', body: donneesForm, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const resultat = await reponse.json();
+            afficherMessage(resultat.ok, resultat.message);
+            if (resultat.ok) {
+                apresAjout[f.dataset.nomEntite]?.(resultat.element);
+                f.hidden = true; f.reset(); majSecteur(); majFormulaires();
+            }       // en cas d'erreur, le formulaire reste ouvert avec ce qui a été saisi
+        } catch {
+            afficherMessage(false, 'L\'ajout a échoué (connexion perdue ou session expirée). Rechargez la page.');
+        } finally {
+            valider.disabled = false;
+        }
+    }
+
+    for (const f of formulaires) {
+        f.addEventListener('submit', e => {
+            e.preventDefault();
+            majSecteur();
+            if (!f.reportValidity()) return;
+            // Hors zone de test, on enregistre vraiment. La zone de test demande un simple aperçu (data-apercu) : rien n'est écrit en base.
+            if (!f.dataset.apercu) { envoyer(f); return; }
+            delete f.dataset.apercu;
+            // Contenu qui serait envoyé : les parents choisis (clés) + les champs saisis.
+            const contenu = {};
+            for (const p of parentsDe(f)) contenu[p.champ] = $(p.select).value;
+            for (const el of f.querySelectorAll('input[name]')) contenu[el.name] = el.value.trim();
+            const apercu = apercuDe(f);
+            apercu.innerHTML = '';
+            const titre = document.createElement('div');
+            titre.className = 'fw-semibold';
+            titre.textContent = 'Aperçu de l\'ajout : ' + f.dataset.entite + ' (' + f.dataset.nomEntite + ')';
+            const pre = document.createElement('pre');
+            pre.className = 'mb-1 small';
+            pre.textContent = JSON.stringify(contenu, null, 2);
+            const note = document.createElement('div');
+            note.className = 'text-muted';
+            note.textContent = 'Rien n\'est enregistré pour le moment.';
+            apercu.append(titre, pre, note);
+            apercu.hidden = false;
+            f.hidden = true;
+            f.reset(); majSecteur();     // formulaire vidé, prêt pour un autre ajout
+        });
+    }
+
+    // ---------- Zone de test (Development uniquement) ----------
+    const choisir = (select, valeur) => { select.value = valeur; select.dispatchEvent(new Event('change', { bubbles: true })); };
+    // Soumet un formulaire en mode aperçu : rien n'est enregistré. Le drapeau est retiré aussitôt (le formulaire peut être invalide et ne rien soumettre).
+    const envoyerEnApercu = f => { f.dataset.apercu = '1'; f.requestSubmit(); delete f.dataset.apercu; };
+    const remplirEtEnvoyer = (f, valeurs) => {
+        ouvrir(f);
+        for (const [nom, valeur] of Object.entries(valeurs)) f.querySelector('[name="' + nom + '"]').value = valeur;
+        envoyerEnApercu(f);
+    };
+    const aucun = message => alert(message);
+    const batimentsDeRue = (cite, rue) => { const adr = new Set(d.batimentRues.filter(br => br.rue === rue).map(br => br.bat)); return d.batiments.filter(b => b.cite === cite && adr.has(b.id)); };
+    const ruesDeCite = cite => [...new Set(d.citeRues.filter(l => l.cite === cite).map(l => l.rue))];
+    const toutVider = () => {
+        choisir(selCite, ''); choisir(selCat, ''); selPc.value = '';
+        formulaires.forEach(f => { f.hidden = true; f.reset(); });
+        document.querySelectorAll('.apercu').forEach(a => a.hidden = true);
+        majSecteur();
+    };
+
+    const cas = {
+        parcoursLieux() {
+            toutVider();
+            const cite = d.cites.find(c => ruesDeCite(c.id).some(r => batimentsDeRue(c.id, r).length));
+            if (!cite) return aucun('Aucune cité n\'a de rue avec bâtiment dans les données.');
+            const rue = ruesDeCite(cite.id).find(r => batimentsDeRue(cite.id, r).length);
+            choisir(selCite, String(cite.id)); choisir(selRue, String(rue)); choisir(selBat, String(batimentsDeRue(cite.id, rue)[0].id));
+        },
+        citeSansRue() {
+            toutVider();
+            const cite = d.cites.find(c => ruesDeCite(c.id).length === 0);
+            if (!cite) return aucun('Toutes les cités ont au moins une rue : aucun cas à montrer avec ces données.');
+            choisir(selCite, String(cite.id));
+        },
+        changerCite() {
+            toutVider();
+            const avec = d.cites.filter(c => ruesDeCite(c.id).length);
+            if (avec.length < 2) return aucun('Il faut au moins deux cités ayant des rues.');
+            choisir(selCite, String(avec[0].id)); choisir(selRue, String(ruesDeCite(avec[0].id)[0]));
+            choisir(selCite, String(avec[1].id));
+        },
+        parcoursTypes() {
+            toutVider();
+            const cat = d.categories.find(c => d.sousCategories.some(s => s.cat === c.code && d.nuisances.some(n => n.sousCat === s.code)));
+            if (!cat) return aucun('Aucune catégorie n\'a de sous-catégorie avec nuisance dans les données.');
+            const sous = d.sousCategories.find(s => s.cat === cat.code && d.nuisances.some(n => n.sousCat === s.code));
+            choisir(selCat, cat.code); choisir(selSousCat, sous.code); choisir(selNuisance, d.nuisances.find(n => n.sousCat === sous.code).code);
+        },
+        catSansSousCat() {
+            toutVider();
+            const cat = d.categories.find(c => !d.sousCategories.some(s => s.cat === c.code));
+            if (!cat) return aucun('Toutes les catégories ont au moins une sous-catégorie : aucun cas à montrer avec ces données.');
+            choisir(selCat, cat.code);
+        },
+        toutVider,
+        rueVide() {
+            toutVider();
+            if (!d.cites.length) return aucun('Aucune cité.');
+            choisir(selCite, String(d.cites[0].id)); ouvrir($('formRue')); envoyerEnApercu($('formRue'));
+        },
+        citeAutre() {
+            toutVider();
+            ouvrir($('formCite')); $('formCite').querySelector('[name=LibCite]').value = 'Cité de test';
+            secteurChoix.value = 'AUTRE'; secteurChoix.dispatchEvent(new Event('change'));
+            secteurAutre.value = 'nord'; secteurAutre.dispatchEvent(new Event('input'));
+            envoyerEnApercu($('formCite'));
+        },
+        rueValide() {
+            toutVider();
+            if (!d.cites.length) return aucun('Aucune cité.');
+            choisir(selCite, String(d.cites[0].id));
+            remplirEtEnvoyer($('formRue'), { LibRue: 'Rue de test', Cp: '71000', Ville: 'Mâcon' });
+        },
+        batValide() {
+            toutVider();
+            const cite = d.cites.find(c => ruesDeCite(c.id).length);
+            if (!cite) return aucun('Aucune cité n\'a de rue.');
+            choisir(selCite, String(cite.id)); choisir(selRue, String(ruesDeCite(cite.id)[0]));
+            remplirEtEnvoyer($('formBat'), { NumBat: 'T1', NumRue: '1', LibBat: 'Bâtiment de test', CodeTranche: '' });
+        },
+        nuisanceValide() {
+            toutVider();
+            const sous = d.sousCategories[0];
+            if (!sous) return aucun('Aucune sous-catégorie.');
+            choisir(selCat, sous.cat); choisir(selSousCat, sous.code);
+            remplirEtEnvoyer($('formNuisance'), { CodeNuisance: 'TEST', LibNuisance: 'Nuisance de test' });
+        }
+    };
+    document.addEventListener('click', e => {
+        const bouton = e.target.closest('[data-test]');
+        if (bouton && cas[bouton.dataset.test]) cas[bouton.dataset.test]();
+    });
+
+    majFormulaires();
+})();
+</script>
+}

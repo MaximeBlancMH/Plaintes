@@ -15,5 +15,6 @@ public partial class Cite
 
     public virtual ICollection<Batiment> Batiments { get; set; } = new List<Batiment>();
 
-    public virtual ICollection<Rue> Rues { get; set; } = new List<Rue>();
+
+    public virtual ICollection<CiteRue> CiteRues { get; set; } = new List<CiteRue>();
 }

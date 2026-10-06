@@ -445,6 +445,31 @@
 </div>@* fin colonne tableau *@
 </div>@* fin ligne filtres + tableau *@
 
+@* Zone de test TEMPORAIRE (Development uniquement) : voir Views/Shared/_ZoneTest.cshtml. *@
+@{
+    var dossierTest = Model.Plaintes.FirstOrDefault();
+    var casDossiers = new List<CasTest>
+    {
+        new("Filtres et tri", "Aucun résultat (n° 999999)", "Message « Aucun dossier à afficher. »", "~/Dossiers?numPlainte=999999"),
+        new("Filtres et tri", "Cité inexistante", "Aucun résultat", "~/Dossiers?cite=zzzzzz"),
+        new("Filtres et tri", "Coût min > coût max", "Aucun résultat, sans erreur", "~/Dossiers?coutMin=1000&coutMax=1"),
+        new("Filtres et tri", "Tri inconnu", "Tri par défaut (date de création), sans erreur", "~/Dossiers?tri=inconnu&sens=asc"),
+        new("Filtres et tri", "Taille de page invalide (7)", "Retombe à 10 lignes par page", "~/Dossiers?pageSize=7"),
+        new("Filtres et tri", "Page hors limites (9999)", "Liste vide ou dernière page, sans erreur", "~/Dossiers?page=9999"),
+        new("Filtres et tri", "Page 0", "Devrait afficher la page 1 (une erreur 500 signale un défaut à corriger)", "~/Dossiers?page=0"),
+        new("Éléments inconnus (id 0)", "Télécharger le PDF", "Page 404", "~/Dossiers/0/download-pdf"),
+        new("Éléments inconnus (id 0)", "Modifier", "Page 404", "~/Dossiers/0/update"),
+        new("Éléments inconnus (id 0)", "Supprimer", "Page 404", "~/Dossiers/0/delete"),
+        new("Éléments inconnus (id 0)", "Pièce jointe", "Page 404", "~/Dossiers/PiecesJointes/0"),
+    };
+    if (dossierTest != null)
+    {
+        casDossiers.Add(new("Premier dossier de la page", $"Télécharger le PDF du n° {dossierTest.NumPlainte}", "Télécharge un PDF avec ses pièces jointes", $"~/Dossiers/{dossierTest.NumPlainte}/download-pdf"));
+        casDossiers.Add(new("Premier dossier de la page", $"Modifier le n° {dossierTest.NumPlainte}", "Formulaire prérempli", $"~/Dossiers/{dossierTest.NumPlainte}/update"));
+    }
+}
+<partial name="_ZoneTest" model="casDossiers" />
+
 @* Modal de suppression (HTML + script) : voir Views/Shared/_SupprimerModal.cshtml *@
 <partial name="_SupprimerModal" />
 

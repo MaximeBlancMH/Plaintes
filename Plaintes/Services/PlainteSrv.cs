@@ -156,6 +156,9 @@ namespace Plaintes.Services
             {
                 query = query.Where(p => p.Composers.Where(c => !c.SupprDet).Any(c => c.Cout <= filtres.coutMax.Value));
             }
+
+            if (pageNumber < 1) pageNumber = 1;
+
             result.TotalCount = await query.CountAsync();
             result.Page = pageNumber;
             result.PageSize = pageSize;

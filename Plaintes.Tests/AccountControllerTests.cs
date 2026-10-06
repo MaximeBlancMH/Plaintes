@@ -62,7 +62,7 @@ namespace Plaintes.Tests
         }
 
         /// <summary>TempData sans stockage : suffit pour lire ce que le contrôleur y a écrit pendant le test.</summary>
-        private sealed class TempDataVide : ITempDataProvider
+        internal sealed class TempDataVide : ITempDataProvider
         {
             public IDictionary<string, object> LoadTempData(HttpContext context) => new Dictionary<string, object>();
             public void SaveTempData(HttpContext context, IDictionary<string, object> values) { }

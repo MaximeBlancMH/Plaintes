@@ -3,9 +3,45 @@
 @{
     var titre = Model.EstModification ? $"Modifier la plainte n° {Model.NumPlainte}" : "Créer une plainte";
     ViewData["Title"] = titre;
+
+    // Zone de test TEMPORAIRE (Development uniquement) : voir Views/Shared/_ZoneTest.cshtml.
+    // Chaque cas envoie au serveur un formulaire volontairement faux, dont tout le reste est valide, pour voir le message d'erreur.
+    var cible = Model.EstModification ? $"~/Dossiers/{Model.NumPlainte}/update" : "~/Dossiers/Creer";
+    var cite = Model.Cites.FirstOrDefault();
+    (string, string)[] Base(params (string, string)[] modifs)
+    {
+        var champs = new Dictionary<string, string>
+        {
+            ["NumReclamation"] = "123-456",
+            ["CodePartieCommune"] = Model.PartiesCommunes.FirstOrDefault()?.CodePartieCommune ?? "",
+            ["Secteur"] = cite?.Secteur ?? "X",
+            ["NumCite"] = (cite?.NumCite ?? 0).ToString(),
+            ["CodeRue"] = "1",
+            ["NumRue"] = "1",
+            ["DateDeb"] = DateTime.Today.ToString("yyyy-MM-dd"),
+            ["CodeCat"] = Model.Categories.FirstOrDefault()?.CodeCat ?? ""
+        };
+        foreach (var (nom, valeur) in modifs) champs[nom] = valeur;
+        return champs.Select(c => (c.Key, c.Value)).ToArray();
+    }
+    var casFormulaire = new List<CasTest>
+    {
+        new("Envoi du formulaire", "Formulaire vide", "Erreur : champ obligatoire", cible, "POST", new[] { ("NumReclamation", "") }),
+        new("Envoi du formulaire", "N° de réclamation trop long (13 car.)", "Erreur : 12 caractères maximum", cible, "POST", Base(("NumReclamation", "1234567890123"))),
+        new("Envoi du formulaire", "Type de faits inexistant", "Erreur : le type de faits choisi n'existe pas", cible, "POST", Base(("CodeFait", "ZZZZ"))),
+        new("Envoi du formulaire", "Type « Autres » sans précision", "Erreur : précisez le type de faits", cible, "POST", Base(("CodeFait", "AUTR"), ("PrecisionFait", ""))),
+        new("Envoi du formulaire", "Partie commune inexistante", "Erreur : la partie commune choisie n'existe pas", cible, "POST", Base(("CodePartieCommune", "ZZZZ"))),
+        new("Envoi du formulaire", "Cité inexistante", "Erreur : la cité choisie n'existe pas", cible, "POST", Base(("NumCite", "999999"))),
+        new("Envoi du formulaire", "Adresse hors de la cité", "Erreur : l'adresse n'appartient pas à la cité", cible, "POST", Base(("CodeRue", "999999"))),
+        new("Autres adresses", "Adresses d'une cité inconnue", "Liste vide (JSON : [])", "~/Dossiers/Creer/Rues?numCite=0"),
+        new("Autres adresses", "Cité invalide (abc)", "Erreur 400", "~/Dossiers/Creer/Rues?numCite=abc"),
+        new("Autres adresses", "Modifier un dossier inexistant", "Page 404", "~/Dossiers/0/update"),
+    };
 }
 
 <div class="my-4">
     <h1 class="h3 mb-3 titre-mh">@titre</h1>
     <partial name="_Formulaire" model="Model" />
 </div>
+
+<partial name="_ZoneTest" model="casFormulaire" />

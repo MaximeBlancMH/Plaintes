@@ -20,6 +20,8 @@ namespace Plaintes.Data
 
         public virtual DbSet<Cite> Cites { get; set; }
 
+        public virtual DbSet<CiteRue> CiteRues { get; set; }
+
         public virtual DbSet<Composer> Composers { get; set; }
 
         public virtual DbSet<Dico> Dicos { get; set; }
@@ -139,17 +141,26 @@ namespace Plaintes.Data
                     .HasMaxLength(10)
                     .IsUnicode(false)
                     .HasColumnName("SECTEUR");
+            });
 
-                // Table de liaison cite_rue : les rues desservies par chaque cité.
-                entity.HasMany(d => d.Rues).WithMany(p => p.Cites)
-                    .UsingEntity<Dictionary<string, object>>("cite_rue",
-                        r => r.HasOne<Rue>().WithMany().HasForeignKey("CODERUE").HasConstraintName("FK_CiteRue_Rue"),
-                        l => l.HasOne<Cite>().WithMany().HasForeignKey("NUMCITE").HasConstraintName("FK_CiteRue_Cite"),
-                        j =>
-                        {
-                            j.HasKey("NUMCITE", "CODERUE").HasName("PK_CiteRue");
-                            j.ToTable("cite_rue");
-                        });
+            modelBuilder.Entity<CiteRue>(entity =>
+            {
+                entity.HasKey(c => new { c.NumCite, c.CodeRue }).HasName("PK_CiteRue");
+
+                entity.ToTable("cite_rue");
+
+                entity.Property(e => e.NumCite).HasColumnName("NUMCITE");
+                entity.Property(e => e.CodeRue).HasColumnName("CODERUE");
+
+                entity.HasOne(d => d.NumCiteNavigation).WithMany(c => c.CiteRues)
+                    .HasForeignKey(d => d.NumCite)
+                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .HasConstraintName("FK_CiteRue_Cite");
+
+                entity.HasOne(d => d.CodeRueNavigation).WithMany(p => p.CiteRues)
+                    .HasForeignKey(d => d.CodeRue)
+                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .HasConstraintName("FK_CiteRue_Rue");
             });
 
             modelBuilder.Entity<Composer>(entity =>
