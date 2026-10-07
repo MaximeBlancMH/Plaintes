@@ -17,6 +17,10 @@ namespace Plaintes.Services.Stockage
 
         public LimiteEnvoiPiecesFilter(IOptions<StorageSettings> s) => _s = s.Value;
 
+        /// <summary>
+        /// Écrit la taille maximale du corps de la requête
+        /// </summary>
+        /// <param name="context"></param>
         public void OnAuthorization(AuthorizationFilterContext context)
         {
             var limite = context.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();

@@ -9,12 +9,14 @@
     <div class="card shadow-sm card-mh mt-4 mb-4 border-warning zone-test">
         <div class="card-header bg-warning-subtle fw-semibold">Zone de test (temporaire, visible uniquement en développement)</div>
         <div class="card-body">
+            @* Un bloc de boutons par groupe *@
             @foreach (var groupe in Model.GroupBy(c => c.Groupe))
             {
                 <h2 class="h6 mt-2">@groupe.Key</h2>
                 <div class="d-flex flex-wrap gap-2 mb-3">
                     @foreach (var cas in groupe)
                     {
+                        @* Selon le cas : script, formulaire POST ou simple lien *@
                         if (cas.Script is not null)
                         {
                             <button type="button" class="btn btn-sm btn-outline-secondary" data-test="@cas.Script" title="@cas.Attendu">@cas.Libelle</button>

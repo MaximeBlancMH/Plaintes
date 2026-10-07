@@ -1,14 +1,10 @@
-using Plaintes.Models;
+﻿using Plaintes.Models;
 using Plaintes.Services.IServices;
 
 namespace Plaintes.Services.Export
 {
     public interface IExportPlainteSrv
     {
-        /// <summary>
-        /// Produit le PDF d'une plainte : le Word généré depuis le modèle, converti en PDF, suivi de ses pièces jointes.
-        /// La plainte doit être chargée avec ses relations (voir <see cref="IPlainteSrv.getValuesForPlainteFile"/>).
-        /// </summary>
         Task<ResultatAssemblage> ExporterPdfAsync(Plainte plainte, CancellationToken ct = default);
     }
 
@@ -30,51 +26,72 @@ namespace Plaintes.Services.Export
             _logger = logger;
         }
 
+        /// <summary>
+        /// Fonction globale qui permet d'exporter un objet plainte en pdf complet avec le dépôt de plainte et ses pièces jointes associées
+        /// </summary>
+        /// <param name="plainte">Plainte à générer</param>
+        /// <param name="ct">Token d'annulation</param>
+        /// <returns>Octets du pdf sous forme de record et la liste des pièces non jointes dans un même objet</returns>
+        /// <exception cref="InvalidOperationException">Erreur qui indique que l'opération demandée ne peut pas être exécutée</exception>
         public async Task<ResultatAssemblage> ExporterPdfAsync(Plainte plainte, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(plainte);
 
-            // La conversion LibreOffice est l'étape lente : on lance en même temps celle de la plainte et celles des pièces Word
-            // (le convertisseur limite lui-même le nombre de conversions simultanées). Le Word de la plainte est produit d'abord,
-            // car il utilise le contexte de base de données, qui n'accepte pas deux requêtes à la fois.
+            // On récupère les valeurs à mettre dans notre fichier de plainte
             var valeurs = await _plainteSrv.getValuesForPlainteFile(plainte)
                 ?? throw new InvalidOperationException("Impossible de construire les valeurs du modèle de plainte.");
+
+            // On crée notre fichier de plainte en ajoutant les informations dans notre template et en récupèrant les octets du fichier .docx
             var docx = await _plainteSrv.createPlainteFile(valeurs);
+            // On démarre la conversion de notre .docx en .pdf
             var tachePlainte = _convertisseur.ConvertirEnPdfAsync(docx, ".docx", ct);
 
             List<PieceExport> pieces;
             try
             {
+                // On récupère chaque pièce jointe sur le disque ou dans la base
                 pieces = await _recuperateur.RecupererAsync(plainte.NumPlainte, ct);
             }
             catch
             {
+                // Si une erreur survient, on attend que l'erreur apparaisse plutôt que de laisser un process tourner et passer à autre chose
                 await AttendreSilencieusementAsync(tachePlainte);
                 throw;
             }
 
+            // On lance en arrière plan les conversions des pièces jointes qui l'imposent 
             var tachesPieces = pieces.Select(p => ConvertirSiWordAsync(p, ct)).ToList();
             try
             {
                 var pdfPlainte = await tachePlainte;
+                // On attend que toutes les tâches de conversion soient terminées
                 var piecesPretes = await Task.WhenAll(tachesPieces);
+
+                // On retourne le pdf assemblé
                 return await _assembleur.AssemblerAsync(pdfPlainte, piecesPretes, ct);
             }
             catch
             {
+                // Si une erreur survient, on attend que l'erreur apparaisse plutôt que de laisser un process tourner et passer à autre chose
                 await AttendreSilencieusementAsync(tachePlainte);
                 await AttendreSilencieusementAsync(Task.WhenAll(tachesPieces));
                 throw;
             }
         }
 
-        // Une pièce Word devient une pièce PDF (le contenu converti remplace l'original). Un échec de conversion ne lève pas :
-        // la pièce est renvoyée avec son erreur, et l'assembleur la signale comme n'importe quelle pièce inutilisable.
+        /// <summary>
+        /// Fonction qui convertit les Word en pdf
+        /// </summary>
+        /// <param name="piece">Record qui contient les métadonnées et le contenu du fichier d'origine</param>
+        /// <param name="ct">Token d'annulation</param>
+        /// <returns>Record qui contient les métadonnées et le contenu du nouveau fichier</returns>
         private async Task<PieceExport> ConvertirSiWordAsync(PieceExport piece, CancellationToken ct)
         {
+            // Si la pièce jointe n'a pas besoin d'être convertie, on la retourne directement
             if (piece.Type != TypePieceExport.Word || !piece.EstUtilisable) return piece;
             try
             {
+                // On convertit la pièce jointe en pdf
                 var pdf = await _convertisseur.ConvertirEnPdfAsync(piece.Contenu!, piece.Extension, ct);
                 return piece with { Type = TypePieceExport.Pdf, Extension = ".pdf", Contenu = pdf };
             }
@@ -84,13 +101,17 @@ namespace Plaintes.Services.Export
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "La pièce {NumPiece} ({Nom}) n'a pas pu être convertie en PDF.", piece.NumPiece, piece.Nom);
+                _logger.LogWarning(ex, "La pièce {NumPiece} ({Nom}) n'a pas pu ètre convertie en PDF.", piece.NumPiece, piece.Nom);
                 var raison = ex is TimeoutException ? "la conversion en PDF a dépassé le délai autorisé." : "conversion en PDF impossible.";
                 return piece with { Contenu = null, Erreur = raison };
             }
         }
 
-        // On n'abandonne jamais une conversion en cours : on attend sa fin (ou son échec) avant de propager l'erreur d'origine.
+        /// <summary>
+        /// Fonction qui permet d'attendre la tâche et ignore son exception car une autre tâche la remonte déjà
+        /// </summary>
+        /// <param name="tache">Tache qu'on attend</param>
+        /// <returns></returns>
         private static async Task AttendreSilencieusementAsync(Task tache)
         {
             try { await tache; } catch { /* l'erreur d'origine est déjà en cours de propagation */ }

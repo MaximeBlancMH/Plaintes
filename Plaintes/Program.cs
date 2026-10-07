@@ -22,8 +22,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IUtilisateurSrv, UtilisateurSrv>();
 builder.Services.AddScoped<IPlainteSrv, PlainteSrv>();
-// MultipartBodyLengthLimit s'applique à chaque fichier d'un envoi : on le règle sur Storage:MaxSize (plus une marge) ; la taille totale
-// est relevée uniquement pour la saisie par LimiteEnvoiPiecesFilter.
+// MultipartBodyLengthLimit s'applique à chaque fichier d'un envoi : on le règle sur Storage:MaxSize (plus une marge), la taille totale
+// est relevée pour la création et la modification par LimiteEnvoiPiecesFilter.
 builder.Services.AddOptions<FormOptions>().Configure<IOptions<StorageSettings>>((o, s) => o.MultipartBodyLengthLimit = s.Value.MaxSize + 1024 * 1024);
 builder.Services.AddScoped<LimiteEnvoiPiecesFilter>();
 
@@ -38,7 +38,6 @@ builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("St
 builder.Services.AddSingleton<IPieceStorage, FileSystemPieceStorage>();
 
 builder.Services.Configure<ExportSettings>(builder.Configuration.GetSection("Export"));
-// Singleton : le verrou qui sérialise les conversions doit être partagé par toutes les requêtes.
 builder.Services.AddSingleton<IConvertisseurPdf, LibreOfficeConvertisseurPdf>();
 builder.Services.AddScoped<IRecuperateurPieces, RecuperateurPieces>();
 builder.Services.AddScoped<IAssembleurPdf, PdfSharpAssembleur>();

@@ -32,6 +32,15 @@ namespace Plaintes.Services
             _reglagesStockage = reglagesStockage.Value;
         }
 
+        /// <summary>
+        /// Fonction qui ordonne les objets de type T selon la colonne et le sens donnés
+        /// </summary>
+        /// <typeparam name="T">Objet parent du champ de tri. Par exemple : Plainte</typeparam>
+        /// <typeparam name="TKey">Type de champ de tri. Par exemple : string</typeparam>
+        /// <param name="query">Requête à trier</param>
+        /// <param name="keySelector">Champ qui va être ordonné. Par exemple : plainte.NumPlainte</param>
+        /// <param name="sens">Ordre de tri</param>
+        /// <returns>Requête non exécutée qui renvoie plusieurs objets de type T (Donc par exemple Plainte)</returns>
         private static IOrderedQueryable<T> Trier<T, TKey>(IQueryable<T> query, Expression<Func<T, TKey>> keySelector, string sens)
         {
             if (sens == "asc")
@@ -44,6 +53,13 @@ namespace Plaintes.Services
             }
         }
 
+        /// <summary>
+        /// Fonction qui va appliquer la mise en ordre des plaintes selon la colonne et le sens choisis en appelant une fonction selon la colonne.
+        /// </summary>
+        /// <param name="query">Requête à trier</param>
+        /// <param name="tri">Colonne qui doit être mise en ordre</param>
+        /// <param name="sens">Ordre de tri</param>
+        /// <returns>Requête non exécutée qui renvoie des Plaintes</returns>
         private static IOrderedQueryable<Plainte> AppliquerTri(IQueryable<Plainte> query, string tri, string sens)
         {
             IOrderedQueryable<Plainte> tries = tri?.ToLowerInvariant() switch
@@ -63,55 +79,16 @@ namespace Plaintes.Services
             return tries.ThenByDescending(p => p.NumPlainte);
         }
 
-        public async Task<List<Plainte>> getPlaintes()
-        {
-            return await _context.Plaintes
-                .Where(p => !p.Suppr)
-                .AsSplitQuery()
-                .Include(p => p.IdUserNavigation)
-                .Include(p => p.NumCiteNavigation)
-                .Include(p => p.CodeRueNavigation)
-                .Include(p => p.CodePartieCommuneNavigation)
-                .Include(p => p.CodeCatNavigation)
-                .Include(p => p.Composers.Where(c => !c.SupprDet))
-                    .ThenInclude(c => c.CodeNuisanceNavigation)
-                        .ThenInclude(n => n.CodeSousCatNavigation)
-                .OrderByDescending(p => p.DateCreation)
-                .ThenByDescending(p => p.DateDeb)
-                .ThenByDescending(p => p.NumPlainte)
-                .ToListAsync();
-        }
-
-        public async Task<PagedResult<Plainte>> getPlaintesForPage(int pageNumber, int pageSize)
-        {
-            PagedResult<Plainte> result = new PagedResult<Plainte>();
-
-            var allPlaintes = _context.Plaintes.Where(p => !p.Suppr);
-
-            result.TotalCount = await allPlaintes.CountAsync();
-            result.Plaintes = await allPlaintes
-                .AsSplitQuery()
-                .Include(p => p.IdUserNavigation)
-                .Include(p => p.NumCiteNavigation)
-                .Include(p => p.CodeRueNavigation)
-                .Include(p => p.CodePartieCommuneNavigation)
-                .Include(p => p.CodeCatNavigation)
-                .Include(p => p.Composers.Where(c => !c.SupprDet))
-                    .ThenInclude(c => c.CodeNuisanceNavigation)
-                        .ThenInclude(n => n.CodeSousCatNavigation)
-                .OrderByDescending(p => p.DateCreation)
-                .ThenByDescending(p => p.DateDeb)
-                .ThenByDescending(p => p.NumPlainte)
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            result.Page = pageNumber;
-
-            result.PageSize = pageSize;
-            return result;
-        }
-
+        /// <summary>
+        /// Fonction qui récupère les plaintes filtrées et triées en fonction du champ et de l'ordre et qui renvoie ces plaintes en 
+        /// fonction du nombre de plaintes affichées par page et la page actuelle.
+        /// </summary>
+        /// <param name="filtres">Tous les filtres renseignés</param>
+        /// <param name="tri">Champ de tri</param>
+        /// <param name="sens"></param>
+        /// <param name="pageNumber"></param>
+        /// <param name="pageSize"></param>
+        /// <returns>Les plaintes triées et ordonnées</returns>
         public async Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize)
         {
             PagedResult<Plainte> result = new PagedResult<Plainte>();
@@ -181,6 +158,11 @@ namespace Plaintes.Services
             return result;
         }
 
+        /// <summary>
+        /// Fonction qui va remplir le template d'une plainte par les valeurs attendues puis regénérer le docx
+        /// </summary>
+        /// <param name="valeurs">Valeurs de chaque champ du template plainte</param>
+        /// <returns>Les octets du fichier</returns>
         public async Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs)
         {
             string path = _config["ModelePlainte"];
@@ -211,6 +193,12 @@ namespace Plaintes.Services
             return ms.ToArray();
         }
 
+        /// <summary>
+        /// Fonction qui va remplacer les mots-clef du template par leur contenus. On est obligé de concaténer en paragraphe car Word découpe mal les mots
+        /// </summary>
+        /// <param name="p">Paragraph</param>
+        /// <param name="key">Mot-clef à remplacer</param>
+        /// <param name="value">Valeur qui va remplacer le mot-clef</param>
         private static void ReplaceTextInParagraph(Paragraph p, string key, string value)
         {
             int depart = 0;
@@ -245,6 +233,11 @@ namespace Plaintes.Services
             }
         }
 
+        /// <summary>
+        /// Création du tableau de valeurs pour le template plainte. On remplit les champs en fonction du contenu de la plainte
+        /// </summary>
+        /// <param name="plainte">Objet plainte qui contient les données qu'on va mettre dans notre document</param>
+        /// <returns>Dictionnaire avec un texte en clef et en valeur. Exemple : "{{DATE_JOUR}}" avec "06/10/2026"</returns>
         public async Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte)
         {
             var valeurs = new Dictionary<string, string>();
@@ -288,13 +281,12 @@ namespace Plaintes.Services
                     valeurs["{{DATE_ENTRE}}"] = plainte.DateFin != null && plainte.DateDeb != plainte.DateFin ? $"le {plainte.DateDeb.ToString("dd/MM/yyyy")} et le {plainte.DateFin?.ToString("dd/MM/yyyy")}" : "";
                 }
 
-                // Chaque morceau est facultatif en base (NUMRUE, LIBRUE, VILLE, CP peuvent être vides ou absents) : on n'assemble que ce qui existe.
                 var rue = plainte.CodeRueNavigation;
                 var departement = rue?.Cp?.Trim() is { Length: >= 2 } cp ? cp.Substring(0, 2) : "";
-                var voie = string.Join(" ", new[] { plainte.NumRue, rue?.LibRue }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()));
+                var voie = $"{plainte.NumRue?.Trim()} {rue?.LibRue?.Trim()}".Trim();
                 var commune = string.IsNullOrWhiteSpace(rue?.Ville) ? "" : $"à {rue.Ville.Trim()}";
                 var suffixe = departement == "" ? "" : $"({departement})";
-                valeurs["{{LIEU}}"] = string.Join(" ", new[] { voie, commune, suffixe }.Where(x => x != ""));
+                valeurs["{{LIEU}}"] = $"{voie} {commune} {suffixe}".Trim();
 
                 valeurs["{{EXPOSE}}"] = $"{plainte.Commentaire?.Trim()} (Réclamation Mâcon Habitat {plainte.NumReclamation}).".Trim();
 
@@ -334,8 +326,12 @@ namespace Plaintes.Services
             return null;
         }
 
-        /// Contrôle que chaque champ du formulaire est conforme à la base de données (obligatoire, longueur maximale,
-        /// valeur existante dans la table liée).
+        /// <summary>
+        /// Fonction qui vérifie que le model qui va servir à la création ou la modification d'une plainte en base de données
+        /// respecte toutes les règles de cette dernière.
+        /// </summary>
+        /// <param name="model">Model qui contient toutes les données à ajouter</param>
+        /// <returns>Null s'il n'y a pas d'erreur, l'intitulé de l'erreur sinon</returns>
         public async Task<string?> validerPlainte(CreatePlainteViewModel model)
         {
             // ---------- N° de réclamation : NUMRECLAMATION varchar(12) NOT NULL ----------
@@ -462,10 +458,12 @@ namespace Plaintes.Services
         }
 
         /// <summary>
-        /// Enregistre les pièces jointes d'une plainte : chaque fichier est écrit sur disque (IPieceStorage), puis une ligne
-        /// est ajoutée dans piece_jointe avec son chemin relatif (CHEMINPIECE) et son empreinte SHA-256 (HASHPIECE) ;
-        /// la colonne FICHIER reste vide. Si une étape échoue, les fichiers déjà écrits sont supprimés et l'exception est relancée.
+        /// Enregistre chaque piece jointe sur le disque puis ses métadonnées dans la base de données.
         /// </summary>
+        /// <param name="numPlainte">Numéro de la plainte</param>
+        /// <param name="pieces">Liste des pièces jointes à ajouter</param>
+        /// <param name="ct">Token d'annulation</param>
+        /// <returns></returns>
         public async Task AddPiecesAsync(int numPlainte, IEnumerable<PieceJointeViewModel> pieces, CancellationToken ct = default)
         {
             var ecrits = new List<string>();
@@ -510,7 +508,11 @@ namespace Plaintes.Services
             }
         }
 
-        // Taille lisible, stockée dans piece_jointe.TAILLEPIECE (varchar(20)) : "850 o", "12,3 Ko", "4,5 Mo".
+        /// <summary>
+        /// On formate la taille selon le nombre d'octets
+        /// </summary>
+        /// <param name="octets">Nombre d'octets</param>
+        /// <returns>String qui contient le nombre d'octets formatés</returns>
         private static string FormaterTaille(long octets) => octets switch
         {
             < 1024 => $"{octets} o",
@@ -519,11 +521,11 @@ namespace Plaintes.Services
         };
 
         /// <summary>
-        /// Enregistre la modification d'une plainte (après validerPlainte). Les anciens détails sont marqués supprimés (SUPPRDET) et
-        /// remplacés par ceux du formulaire ; les pièces retirées sont marquées supprimées (SUPPRPJ, fichier laissé sur le disque) ;
-        /// les nouvelles pièces sont ajoutées. Tout est enregistré dans une transaction. Renvoie false si la plainte n'existe plus
-        /// ou si l'enregistrement échoue.
+        /// Enregistre la modification d'une plainte (après validerPlainte). On utilise une transaction 
+        /// pour qu'un détail supprimé ne le reste pas si la fin de la modification échoue par exemple.
         /// </summary>
+        /// <param name="model">Model qui contient les données de la plainte à modifier</param>
+        /// <returns>Un booléen qui indique la réussite ou non de l'opération</returns>
         public async Task<bool> updatePlainte(CreatePlainteViewModel model)
         {
             try
@@ -571,6 +573,13 @@ namespace Plaintes.Services
             }
         }
 
+        /// <summary>
+        /// Fonction qui crée une plainte en base de données. On utilise l'email de l'utilisateur afin 
+        /// de récupérer son id qui est la clef primaire en base de données.
+        /// </summary>
+        /// <param name="model">Model qui contient toutes les données de la plainte à créer</param>
+        /// <param name="userEmail">Email de l'utilisateur qui a posté la plainte.</param>
+        /// <returns>Un booléen qui atteste de la réussite ou non de la méthode</returns>
         public async Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail)
         {
             try

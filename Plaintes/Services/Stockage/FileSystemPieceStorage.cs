@@ -8,14 +8,19 @@ namespace Plaintes.Services.Stockage
         private readonly StorageSettings _s;
         private readonly string _racine;
 
+        /// <summary>
+        /// Constructeur de FileSystemPieceStorage. On récupère les informations essentielles à la sauvegarde des pièces jointes.
+        /// </summary>
+        /// <param name="s">Paramètres de stockage de fichiers</param>
+        /// <param name="env">Environnement actuel. Il nous sert afin de récupérer le chemin du dossier de l'application</param>
+        /// <exception cref="InvalidOperationException">Erreur qui indique que l'opération demandée ne peut pas être exécutée</exception>
         public FileSystemPieceStorage(IOptions<StorageSettings> s, IWebHostEnvironment env)
         {
             _s = s.Value;
             if (string.IsNullOrWhiteSpace(_s.Racine))
                 throw new InvalidOperationException("Le chemin de stockage (Storage:Racine) n'est pas configuré");
 
-            // Sous Linux, "C:/..." n'est pas un chemin absolu : il serait pris pour un dossier relatif nommé "C:" et les fichiers
-            // seraient écrits au mauvais endroit sans erreur. On refuse donc explicitement ce cas.
+            // On vérifie que le chemin n'est pas qu'un chemin compatible à Windows et qu'il est accepté sur tous les OS
             if (!OperatingSystem.IsWindows() && System.Text.RegularExpressions.Regex.IsMatch(_s.Racine, @"^[A-Za-z]:[\\/]"))
                 throw new InvalidOperationException($"Storage:Racine ({_s.Racine}) est un chemin Windows, inutilisable sur ce système : indiquez un chemin Linux (ex. /var/plaintes/pieces).");
 
@@ -24,6 +29,13 @@ namespace Plaintes.Services.Stockage
                 Directory.CreateDirectory(_racine);
         }
 
+        /// <summary>
+        /// On transforme notre chemin relatif en chemin complet pour avoir le chemin du fichier le plus sûr possible. 
+        /// On refuse tout chemin qui sort de la racine
+        /// </summary>
+        /// <param name="path">Chemin relatif</param>
+        /// <returns>Chemin du fichier</returns>
+        /// <exception cref="InvalidOperationException">Erreur qui indique que l'opération demandée ne peut pas être exécutée</exception>
         private string Resolve(string path)
         {
             var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -35,6 +47,16 @@ namespace Plaintes.Services.Stockage
             return full;
         }
 
+        /// <summary>
+        /// Fonction qui sauvegare la piece jointe sur le disque
+        /// </summary>
+        /// <param name="content">Contenu de la pièce jointe sous forme de Stream</param>
+        /// <param name="originalName">Nom de base du fichier</param>
+        /// <param name="numPlainte">Numéro de la plainte (Clef primaire)</param>
+        /// <param name="checkExtension">Est ce qu'on doit vérifier l'extention</param>
+        /// <param name="ct">Token d'annulation</param>
+        /// <returns>Métadonnées du fichier sous forme de Record</returns>
+        /// <exception cref="InvalidOperationException">Erreur qui indique que l'opération demandée ne peut pas être exécutée</exception>
         public async Task<FichierStocke> SaveAsync(Stream content, string originalName, int numPlainte,
                                         bool checkExtension = true, CancellationToken ct = default)
         {
@@ -82,6 +104,13 @@ namespace Plaintes.Services.Stockage
                 total);
         }
 
+
+        /// <summary>
+        /// Fonction qui ouvre un fichier depuis son chemin.
+        /// </summary>
+        /// <param name="path">Chemin du fichier à ouvrir</param>
+        /// <returns>Stream du fichier</returns>
+        /// <exception cref="FileNotFoundException">Erreur qui indique que le fichier n'a pas été trouvé</exception>
         public Stream Open(string path)
         {
             var absolutePath = Resolve(path);
@@ -90,6 +119,10 @@ namespace Plaintes.Services.Stockage
             return new FileStream(absolutePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         }
 
+        /// <summary>
+        /// Fonction qui supprime un fichier sur le disque
+        /// </summary>
+        /// <param name="path">Chemin du fichier</param>
         public void Delete(string path)
         {
             var absolutePath = Resolve(path);
@@ -97,14 +130,22 @@ namespace Plaintes.Services.Stockage
                 File.Delete(absolutePath);
         }
 
+        /// <summary>
+        /// Fonction qui vérifie si un fichier existe bien à ce chemin là
+        /// </summary>
+        /// <param name="path">Chemin du fichier</param>
+        /// <returns>True si le fichier existe, False s'il n'existe pas</returns>
         public bool Exists(string path)
         {
             var absolutePath = Resolve(path);
             return File.Exists(absolutePath);
         }
 
-        // Si le partage est démonté, le dossier racine peut quand même exister (en local) : sans fichier témoin on écrirait
-        // sur le disque du serveur, et les fichiers disparaîtraient au remontage. Vérifié avant chaque écriture.
+        /// <summary>
+        /// Fonction qui vérifie si le fichier témoin existe. Cela permet de vérifier que le dossier 
+        /// est accessible et le partage opérationnel.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">Erreur qui indique que l'opération demandée ne peut pas être exécutée</exception>
         private void VerifierTemoin()
         {
             if (!string.IsNullOrWhiteSpace(_s.FichierTemoin) &&
@@ -113,6 +154,11 @@ namespace Plaintes.Services.Stockage
                     $"Fichier témoin '{_s.FichierTemoin}' introuvable dans {_racine} : le partage n'est probablement pas monté");
         }
 
+        /// <summary>
+        /// Fonction qui teste l'écriture et la relecture d'un fichier dans notre dossier de stockage
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException">Erreur qui indique que l'opération demandée ne peut pas être exécutée</exception>
         public async Task CheckAsync()
         {
             // 1. le partage est-il vraiment monté ?

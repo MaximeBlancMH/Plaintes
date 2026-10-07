@@ -22,9 +22,17 @@ namespace Plaintes.Controllers
             _plainteSrv = plainteSrv;
         }
 
+        /// <summary>
+        /// Action par défaut de l'application, on redirige vers la liste des dossiers
+        /// </summary>
+        /// <returns></returns>
         [Route("")]
         public IActionResult Index() => RedirectToAction("Dossiers", "Dossier");
 
+        /// <summary>
+        /// Action qui récupère le contenu des tables où on peut ajouter des nouvelles valeurs. On affiche ensuite la vue associée
+        /// </summary>
+        /// <returns></returns>
         [Authorize(Roles = "A,S")]
         [Route("GestionTables")]
         public async Task<IActionResult> GestionTables()
@@ -45,8 +53,13 @@ namespace Plaintes.Controllers
             return View(vm);
         }
 
-        // Supprime l'élément choisi dans une liste de la page « Gestion des tables ». Le résultat (succès ou refus) est affiché sur la page.
-        // cat : Cite, Rue, Batiment, PartieCommune, Categorie, SousCategorie ou Nuisance ; code : son identifiant.
+        /// <summary>
+        /// Action de type POST qui supprime l'élément choisi
+        /// </summary>
+        /// <param name="cat">Catégorie de l'élément à supprimer (à ne pas confondre avec la catégorie d'une plainte, 
+        /// là on peut avoir par exemple "Batiment", "PartieCommune", etc)</param>
+        /// <param name="code">Code de l'élément à supprimer</param>
+        /// <returns></returns>
         [HttpPost]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "A,S")]
@@ -73,7 +86,13 @@ namespace Plaintes.Controllers
             return RedirectToAction(nameof(GestionTables));
         }
 
-        // Ajoute un élément. Les champs du formulaire portent le nom des colonnes (LibCite, Secteur, NumCite...) ; voir la page.
+        /// <summary>
+        /// Action de type POST qui ajoute un élément dans la table qui correspond à la catégorie renseignée
+        /// </summary>
+        /// <param name="cat">Catégorie de l'élément à ajouter (à ne pas confondre avec la catégorie d'une plainte, 
+        /// là on peut avoir par exemple "Batiment", "PartieCommune", etc)</param>
+        /// <param name="form">Formulaire qui contient toutes les informations du nouvel élément</param>
+        /// <returns></returns>
         [HttpPost]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "A,S")]
@@ -101,10 +120,15 @@ namespace Plaintes.Controllers
             return RedirectToAction(nameof(GestionTables));
         }
 
-        // ---------- Suppression ----------
-        // Cité, rue et bâtiment n'ont pas de colonne « supprimé » : ils sont vraiment supprimés, sauf s'ils sont utilisés.
-        // Partie commune, catégorie, sous-catégorie et nuisance sont seulement marquées supprimées (les plaintes existantes les gardent).
-        // Renvoie null si tout s'est bien passé, sinon le message à afficher.
+        /// <summary>
+        /// Fonction qui permet de supprimer un élément d'une table en fonction de sa catégorie. Certaines tables ont une colonne
+        /// "Suppr" donc on passe cette valeur à 1 sinon on supprime vraiment la ligne en base de données. On évite la suppression en cascade.
+        /// Ainsi, si une rue ou une cité sont utilisées, on peut pas les supprimer
+        /// </summary>
+        /// <param name="cat">Catégorie de l'élément à supprimer (à ne pas confondre avec la catégorie d'une plainte, 
+        /// là on peut avoir par exemple "Batiment", "PartieCommune", etc)</param>
+        /// <param name="code">Code de l'élément à supprimer</param>
+        /// <returns>Null si tout s'est bien passé, le message d'erreur sinon</returns>
         private async Task<string?> SupprimerElement(string cat, string code)
         {
             switch (cat)
@@ -178,9 +202,14 @@ namespace Plaintes.Controllers
             return null;
         }
 
-        // ---------- Ajout ----------
-        // Contrôles volontairement simples : champs obligatoires, longueurs de la base, code pas déjà pris, parent existant.
-        // Renvoie null si tout s'est bien passé, sinon le message à afficher.
+        /// <summary>
+        /// Fonction qui permet d'ajouter un élément selon sa catégorie. On effectue quelques contrôles simples avant
+        /// </summary>
+        /// <param name="cat">Catégorie de l'élément à ajouter (à ne pas confondre avec la catégorie d'une plainte, 
+        /// là on peut avoir par exemple "Batiment", "PartieCommune", etc)</param>
+        /// <param name="form">Formulaire qui contient les informations de l'élément</param>
+        /// <param name="cree">Liste d'objets qui récupère un élément afin de mettre automatiquement la liste à jour dans le DOM</param>
+        /// <returns>Null si tout se passe bien, le message d'erreur sinon</returns>
         private async Task<string?> AjouterElement(string cat, IFormCollection form, List<object> cree)
         {
             Func<object>? element = null;   // décrit l'élément créé
@@ -296,11 +325,5 @@ namespace Plaintes.Controllers
             if (element != null) cree.Add(element());
             return null;
         }
-
-        //[ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-        //public IActionResult Error()
-        //{
-        //    return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
-        //}
     }
 }

@@ -13,12 +13,16 @@
     <header>
         @{
             var isAuth = (User.Identity?.IsAuthenticated ?? false) && !Plaintes.Services.ComptesClaims.EstRefuse(User);   // un compte refusé ne voit ni menu ni nom
-            var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
+            var chemin = Context.Request.Path.Value ?? "";
             var compteNom = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
             var compteEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
             var compteDroit = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-            string Active(string c) => string.Equals(ctrl, c, StringComparison.OrdinalIgnoreCase) ? " active" : "";
+            // Renvoie " active" si l'adresse de la page commence par celle du lien (sauf pour l'adresse à exclure)
+            string Active(string lien, string? exclure = null) =>
+                chemin.StartsWith(lien, StringComparison.OrdinalIgnoreCase)
+                && (exclure is null || !chemin.StartsWith(exclure, StringComparison.OrdinalIgnoreCase)) ? " active" : "";
         }
+        @* Barre de navigation *@
         <nav class="navbar navbar-expand-lg navbar-mh sticky-top" data-bs-theme="dark">
             <div class="container-fluid">
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">
@@ -29,22 +33,24 @@
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <div class="collapse navbar-collapse" id="navMain">
+                    @* Le menu n'est visible que si l'utilisateur est connecté *@
                     @if (isAuth)
                     {
                         <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                             <li class="nav-item">
-                                <a class="nav-link@(Active("Dossier"))" href="/Dossiers">Dossiers</a>
+                                <a class="nav-link@(Active("/Dossiers", "/Dossiers/Creer"))" href="/Dossiers">Dossiers</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link@(Active("CreatePlainte"))" href="/Dossiers/Creer">Saisir un dossier</a>
+                                <a class="nav-link@(Active("/Dossiers/Creer"))" href="/Dossiers/Creer">Saisir un dossier</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link@(Active("Account"))" href="/Account/AllAccounts">Gestion Utilisateurs</a>
+                                <a class="nav-link@(Active("/Account/AllAccounts"))" href="/Account/AllAccounts">Gestion Utilisateurs</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link@(Active("Home"))" href="/Home/GestionTables">Gestion des tables</a>
+                                <a class="nav-link@(Active("/GestionTables"))" href="/GestionTables">Gestion des tables</a>
                             </li>
                         </ul>
+                        @* Nom de l'utilisateur (infos au survol) et bouton de déconnexion *@
                         <div class="navbar-user d-flex align-items-lg-center flex-column flex-lg-row gap-2 gap-lg-3 pt-2 pt-lg-0">
                             <div class="compte-hover" tabindex="0">
                                 <span class="navbar-text text-white fw-semibold">@User.Identity!.Name</span>
@@ -64,6 +70,7 @@
         </nav>
     </header>
 
+    @* Fenêtre de confirmation de déconnexion *@
     @if (isAuth)
     {
         <div class="modal fade" id="logoutModal" tabindex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
@@ -89,6 +96,7 @@
     }
     <div class="container">
         <main role="main" class="pb-3">
+            @* Contenu de la page *@
             @RenderBody()
         </main>
     </div>
@@ -99,6 +107,7 @@
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    @* Scripts propres à chaque page *@
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

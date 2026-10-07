@@ -70,7 +70,7 @@ public class PlainteFiltres
     public string? nuisance { get; set; }
     public int? coutMin { get; set; }
     public int? coutMax { get; set; }
-    // Tri : nom de la colonne (num, utilisateur, secteur, cite, partiecommune, periode, reclamation, categorie) et sens ("asc" ou "desc").
+    // Tri : nom de la colonne (numplainte, cite, rue, partiecommune, reclamation, cout, categorie, datecreation, datedeb) et sens ("asc" ou "desc").
     public string? tri { get; set; }
     public string? sens { get; set; }
 }

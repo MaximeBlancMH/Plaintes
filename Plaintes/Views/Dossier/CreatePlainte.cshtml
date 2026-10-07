@@ -8,6 +8,7 @@
     // Chaque cas envoie au serveur un formulaire volontairement faux, dont tout le reste est valide, pour voir le message d'erreur.
     var cible = Model.EstModification ? $"~/Dossiers/{Model.NumPlainte}/update" : "~/Dossiers/Creer";
     var cite = Model.Cites.FirstOrDefault();
+    // Fabrique un formulaire valide en ne changeant que les champs voulus
     (string, string)[] Base(params (string, string)[] modifs)
     {
         var champs = new Dictionary<string, string>
@@ -39,6 +40,7 @@
     };
 }
 
+@* Titre et formulaire *@
 <div class="my-4">
     <h1 class="h3 mb-3 titre-mh">@titre</h1>
     <partial name="_Formulaire" model="Model" />

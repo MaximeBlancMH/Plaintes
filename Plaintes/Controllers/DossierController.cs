@@ -27,6 +27,16 @@ namespace Plaintes.Controllers
             _storage = storage;
         }
 
+        /// <summary>
+        /// Action qui récupère les dossiers plainte et les renvoie dans la vue correspondante. 
+        /// On récupère seulement le nombre de plaintes demandé par la pagination et qui correspondent aux filtres sélectionnés
+        /// </summary>
+        /// <param name="filtres">Filtres sélectionné sur la page</param>
+        /// <param name="tri">Colonne à trier pour l'ordre des plaintes</param>
+        /// <param name="sens">Sens du tri</param>
+        /// <param name="page">Numéro de page</param>
+        /// <param name="pageSize">Nombre de plaintes affichées par page</param>
+        /// <returns></returns>
         [Authorize]
         public async Task<IActionResult> Dossiers(PlainteFiltres filtres, string tri, string sens, int page = 1, int pageSize = 10)
         {
@@ -59,16 +69,25 @@ namespace Plaintes.Controllers
             return View(result);
         }
 
+        /// <summary>
+        /// Récupère les propositions possibles pour les listes déroulantes et affiche la page de création d'une plainte
+        /// </summary>
+        /// <returns></returns>
         [Authorize]
         [HttpGet("Creer")]
         public async Task<IActionResult> Saisie()
         {
             var model = new CreatePlainteViewModel();
             await RemplirListes(model);
-            // La vue garde le nom CreatePlainte.cshtml.
             return View("CreatePlainte", model);
         }
 
+
+        /// <summary>
+        /// Action de type POST qui contrôle les informations saisies puis ajoute la plainte en base de données
+        /// </summary>
+        /// <param name="model">Model contenant les informations saisies de la nouvelle plainte</param>
+        /// <returns></returns>
         [Authorize]
         [HttpPost("Creer")]
         [ServiceFilter(typeof(LimiteEnvoiPiecesFilter), Order = int.MinValue)]
@@ -90,6 +109,7 @@ namespace Plaintes.Controllers
                     model.Erreur = await _plainteSrv.validerPlainte(model);
                     if (model.Erreur == null)
                     {
+                        // On ajoute la plainte dans la base de données
                         string userEmail = User.FindFirstValue(ClaimTypes.Email) ?? throw new InvalidOperationException("Utilisateur non authentifié.");
                         bool result = await _plainteSrv.createPlainte(model, userEmail);
                         if (result)
@@ -101,18 +121,23 @@ namespace Plaintes.Controllers
                 }
                 catch (InvalidOperationException ex)
                 {
+                    // Si une exception est levée, on la rajoute dans l'état du model et on re-remplit les listes déroulantes pour l'affichage
                     ModelState.AddModelError(string.Empty, ex.Message);
                     await RemplirListes(model);
                     return View("CreatePlainte", model);
                 }
             }
 
-            // Les listes de choix ne sont pas envoyées par le formulaire : on les recharge avant de réafficher la page.
+            // On remplit de nouveau les listes avant de recharger la page
             await RemplirListes(model);
             return View("CreatePlainte", model);
         }
 
-        // Charge les listes de choix du formulaire de saisie (communes à Saisie et Create).
+        /// <summary>
+        /// Fonction qui permet de remplir les listes déroulantes pour le formulaire de création ou la modification de plainte
+        /// </summary>
+        /// <param name="model">Model de données pour la page de création de plaintes</param>
+        /// <returns></returns>
         private async Task RemplirListes(CreatePlainteViewModel model)
         {
             model.TypesFait = await _context.TypeFaits.AsNoTracking().OrderBy(t => t.LibFait).ToListAsync();
@@ -129,17 +154,23 @@ namespace Plaintes.Controllers
                 .Select(c => c.Secteur!).Distinct().OrderBy(s => s).ToList();
         }
 
-        // Adresses d'une cité (bâtiments de la cité -> batiment_rue), pour la liste "Adresse" : "numéro rue code postal ville".
+        /// <summary>
+        /// Action qui récupère l'adresse de tous les bâtiments d'une cité
+        /// </summary>
+        /// <param name="numCite">Numéro de la cité</param>
+        /// <returns></returns>
         [Authorize]
         [HttpGet("Creer/Rues")]
         public async Task<IActionResult> RuesParCite(int numCite)
         {
+            // On récupère toutes les informations de l'adresse grâce à la table Rue
             var adresses = await _context.BatimentRues.AsNoTracking()
                 .Where(br => br.IdBatNavigation.NumCite == numCite)
                 .Select(br => new { br.CodeRue, br.NumRue, Lib = br.CodeRueNavigation.LibRue, br.CodeRueNavigation.Cp, br.CodeRueNavigation.Ville })
                 .Distinct()
                 .OrderBy(a => a.Lib).ThenBy(a => a.NumRue)
                 .ToListAsync();
+            
             return Json(adresses.Select(a => new
             {
                 // "codeRue|numRue" : le formulaire en tire CodeRue et NumRue.
@@ -148,6 +179,11 @@ namespace Plaintes.Controllers
             }));
         }
 
+        /// <summary>
+        /// Action qui ouvre la pièce jointe dans le navigateur pour certains types et télécharge pour d'autres
+        /// </summary>
+        /// <param name="id">Id de la pièce jointe</param>
+        /// <returns></returns>
         [Authorize]
         [Route("PiecesJointes/{id:int}")]
         public async Task<IActionResult> PieceJointeFichier(int id)
@@ -162,13 +198,12 @@ namespace Plaintes.Controllers
             var nom = string.IsNullOrWhiteSpace(pj.LibPiece) ? $"piece-{pj.NumPiece}" : pj.LibPiece;
             Response.Headers.XContentTypeOptions = "nosniff";
 
-            // Nouvelles pièces : le fichier est sur le disque (CheminPiece). PDF et images s'ouvrent dans le navigateur,
-            // les autres types (Word...) sont téléchargés.
             if (!string.IsNullOrEmpty(pj.CheminPiece))
             {
                 Stream flux;
                 try
                 {
+                    // On regarde si le chemin stocké en base existe toujours. Si oui, on ouvre notre fichier
                     if (!_storage.Exists(pj.CheminPiece))
                     {
                         _logger.LogWarning("Le fichier de la pièce jointe {PieceJointeId} n'existe pas dans le stockage.", id);
@@ -182,7 +217,7 @@ namespace Plaintes.Controllers
                     return NotFound();
                 }
 
-                // Le type est déduit de l'extension du nom d'origine (jamais d'un type envoyé par le client).
+                // On déduit le type du fichier grâce à son extension
                 new FileExtensionContentTypeProvider().TryGetContentType(nom, out var typeDisque);
                 typeDisque ??= "application/octet-stream";
                 var inline = typeDisque == "application/pdf" || typeDisque.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
@@ -191,7 +226,7 @@ namespace Plaintes.Controllers
                 return File(flux, typeDisque);
             }
 
-            // Anciennes pièces : le contenu est en base (FICHIER). Elles sont toujours téléchargées.
+            // On a gardé des anciennes pièces jointes dont le contenu est stocké dans la base de données, on la télécharge directement
             if (pj.Fichier == null) return NotFound();
             var type = Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(pj.TypePiece, out var parsed)
                 ? parsed.MediaType.Value!
@@ -200,6 +235,11 @@ namespace Plaintes.Controllers
             return File(pj.Fichier, type);
         }
 
+        /// <summary>
+        /// Action qui supprime une plainte (on passe la valeur Suppr à true)
+        /// </summary>
+        /// <param name="id">Id de la plainte à supprimer</param>
+        /// <returns></returns>
         [Authorize]
         [Route("{id:int}/delete")]
         public async Task<IActionResult> SupprimerPlainte(int id)
@@ -219,7 +259,11 @@ namespace Plaintes.Controllers
             return RedirectToAction(nameof(Dossiers));
         }
 
-        // Formulaire de modification : le même que la création, rempli avec les données de la plainte.
+        /// <summary>
+        /// Action qui récupère la plainte à modifier et l'envoie avec la vue de modification
+        /// </summary>
+        /// <param name="id">Id de la plainte à modifier</param>
+        /// <returns></returns>
         [Authorize]
         [HttpGet("{id:int}/update")]
         public async Task<IActionResult> ModifierPlainte(int id)
@@ -254,6 +298,7 @@ namespace Plaintes.Controllers
                 CodeCat = plainte.CodeCat
             };
 
+            // On ajoute chaque détail à notre view model
             foreach (var det in plainte.Composers)
             {
                 model.Details.Add(new DetailPlainteViewModel
@@ -264,12 +309,18 @@ namespace Plaintes.Controllers
                 });
             }
 
+            // On récupère les pièces jointes ainsi que les listes déroulantes
             await ChargerPiecesExistantes(model);
             await RemplirListes(model);
             return View("CreatePlainte", model);
         }
 
-        // Enregistre la modification. Mêmes contrôles que pour la création ; le n° de plainte vient de l'adresse, jamais du formulaire.
+        /// <summary>
+        /// Action de type POST qui contrôle le view model d'une plainte envoyé et modifie la plainte concernée ensuite
+        /// </summary>
+        /// <param name="id">Id de la plainte à modifier</param>
+        /// <param name="model">View Model de la plainte qui contient ses nouvelles données</param>
+        /// <returns></returns>
         [Authorize]
         [HttpPost("{id:int}/update")]
         [ServiceFilter(typeof(LimiteEnvoiPiecesFilter), Order = int.MinValue)]
@@ -303,7 +354,11 @@ namespace Plaintes.Controllers
             return View("CreatePlainte", model);
         }
 
-        // Pièces non supprimées de la plainte, sans leur contenu (les anciennes pièces ont leur fichier en base : on ne le charge pas).
+        /// <summary>
+        /// Fonction qui permet de charger les pièces jointes dans le viewmodel d'une plainte
+        /// </summary>
+        /// <param name="model">View Model de la plainte</param>
+        /// <returns></returns>
         private async Task ChargerPiecesExistantes(CreatePlainteViewModel model)
         {
             var pieces = await _context.PieceJointes
@@ -319,36 +374,13 @@ namespace Plaintes.Controllers
                 pj.CodeNature == "AUTR" && !string.IsNullOrWhiteSpace(pj.PrecisionNature) ? $"{pj.Nature} : {pj.PrecisionNature}" : pj.Nature)).ToList();
         }
 
-        //[Authorize]
-        //[Route("{id:int}/download")]
-        //public async Task<IActionResult> TelechargerPlainte(int id)
-        //{
-        //    // On récupère la plainte avec ses relations nécessaires pour générer le document Word.
-        //    var plainte = await _context.Plaintes
-        //        .Include(p => p.Composers.Where(c => !c.SupprDet))
-        //            .ThenInclude(c => c.CodeNuisanceNavigation)
-        //                .ThenInclude(n => n.CodeSousCatNavigation)
-        //        .Include(p => p.PieceJointes.Where(pj => !pj.SupprPj))
-        //        .Include(p => p.CodeRueNavigation)
-        //        .FirstOrDefaultAsync(p => p.NumPlainte == id && !p.Suppr);
-
-        //    // On construit nos couples clefs/valeurs pour le modèle de document Word à partir de la plainte récupérée.
-        //    var valeurs = await _plainteSrv.getValuesForPlainteFile(plainte);
-
-        //    if (valeurs == null)
-        //    {
-        //        _logger.LogWarning("Aucune plainte trouvée pour l'ID {PlainteId}.", id);
-        //        return NotFound();
-        //    }
-
-        //    // Générer le document Word de la plainte (à partir du modèle .docx)
-        //    var docBytes = await _plainteSrv.createPlainteFile(valeurs);
-        //    // Retourner le document Word en tant que fichier téléchargeable
-        //    return File(docBytes,
-        //        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        //        $"plainte-{plainte.NumPlainte}.docx");
-        //}
-
+        /// <summary>
+        /// Action qui permet de télécharger la plainte avec ses pièces jointes.
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="export"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
         [Authorize]
         [Route("{id:int}/download-pdf")]
         public async Task<IActionResult> TelechargerPlaintePdf(int id, [FromServices] IExportPlainteSrv export, CancellationToken ct)
@@ -369,11 +401,15 @@ namespace Plaintes.Controllers
 
             try
             {
-                // Plainte convertie en PDF, suivie de ses pièces jointes (PDF repris, images posées sur une page, Word convertis).
+                // Plainte convertie en PDF suivie de ses pièces jointes.
                 var resultat = await export.ExporterPdfAsync(plainte, ct);
+
+                // On log les pièces jointes qui n'ont pas pu être ajoutées au pdf final
                 if (resultat.NonJointes.Count > 0)
                     _logger.LogWarning("Export PDF de la plainte {PlainteId} : {Nb} pièce(s) non intégrée(s) : {Pieces}",
                         id, resultat.NonJointes.Count, string.Join(" | ", resultat.NonJointes));
+
+                // On retourne un File qui télécharge le pdf complet
                 return File(resultat.Pdf, "application/pdf", $"plainte-{plainte.NumPlainte}.pdf");
             }
             catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException)

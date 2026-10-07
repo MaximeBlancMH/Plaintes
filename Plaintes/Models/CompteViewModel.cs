@@ -1,6 +1,8 @@
 namespace Plaintes.Models
 {
-    /// <summary>Informations du compte connecté affichées sur la page "Mon Compte".</summary>
+    /// <summary>
+    /// Informations du compte connecté
+    /// </summary>
     public class CompteViewModel
     {
         public string? Nom { get; set; }

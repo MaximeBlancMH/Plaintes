@@ -12,15 +12,25 @@ namespace Plaintes.Services
     {
         public const string Refuse = "compte_refuse";
 
-        /// <summary>Un utilisateur est actif s'il existe et n'a pas de date de fin (DateFinu renseignée = utilisateur supprimé).</summary>
+        /// <summary>
+        /// Fonction qui détermine si l'utilisateur est encore actif
+        /// </summary>
+        /// <param name="utilisateur">Utilisateur en question</param>
+        /// <returns>Un booléen qui répond à la question</returns>
         public static bool EstActif(Utilisateur? utilisateur) => utilisateur is not null && utilisateur.DateFinu is null;
 
+        /// <summary>
+        /// Une fonction qui vérifie si l'utilisateur porte le claim Refuse (Si oui, il est interdit d'accès)
+        /// </summary>
+        /// <param name="utilisateur">Utilisateur en question</param>
+        /// <returns>Un booléen qui répond à la question</returns>
         public static bool EstRefuse(ClaimsPrincipal utilisateur) => utilisateur.HasClaim(Refuse, "1");
 
         /// <summary>
-        /// Politique appliquée à tout [Authorize] : être connecté ET ne pas être un compte refusé.
+        /// être connecté ET ne pas être un compte refusé.
         /// Un échec renvoie vers /Account/AccessDenied, donc vers la page « accès refusé ».
         /// </summary>
+        /// <returns>Une autorisation qui définit le contrôle d'accès aux pages</returns>
         public static AuthorizationPolicy PolitiqueParDefaut() => new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
             .RequireAssertion(ctx => !EstRefuse(ctx.User))

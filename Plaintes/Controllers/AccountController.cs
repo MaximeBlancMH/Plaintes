@@ -23,6 +23,11 @@ namespace Plaintes.Controllers
             _utilisateurSrv = utilisateurSrv;
         }
 
+        /// <summary>
+        /// Action qui déclenche la connexion Microsoft
+        /// </summary>
+        /// <param name="returnURl">Où doit renvoyer l'action à la fin de son traitement</param>
+        /// <returns></returns>
         [HttpGet("Login")]
         public IActionResult Login(string? returnURl = "/")
         {
@@ -30,6 +35,11 @@ namespace Plaintes.Controllers
             return Challenge(new AuthenticationProperties { RedirectUri = returnURl });
         }
 
+        /// <summary>
+        /// Action de type POST qui déconnecte l'utilisateur de l'application. 
+        /// Dans notre cas, on supprime la session de l'application avec celle de Microsoft en plus
+        /// </summary>
+        /// <returns></returns>
         [HttpPost]
         [ValidateAntiForgeryToken]
         [Route("Logout")]
@@ -41,6 +51,10 @@ namespace Plaintes.Controllers
                 Saml2Defaults.Scheme);
         }
 
+        /// <summary>
+        /// Action qui récupère la liste des utilisateurs de l'application puis renvoie vers la vue associée
+        /// </summary>
+        /// <returns></returns>
         [HttpGet("AllAccounts")]
         [Authorize(Roles = "A,S")]
         public async Task<IActionResult> AllAccounts()
@@ -49,6 +63,12 @@ namespace Plaintes.Controllers
             return View(users);
         }
 
+        /// <summary>
+        /// Action de type POST qui va effectuer les contrôles puis les actions pour "supprimer" un 
+        /// utilisateur en base de données (on met la date d'aujourd'hui à DateFinu pour préciser qu'il était valide jusqu'à aujourd'hui)
+        /// </summary>
+        /// <param name="id">Id de l'utilisateur à supprimer</param>
+        /// <returns></returns>
         [HttpPost("DeleteAccount")]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "A,S")]
@@ -72,12 +92,18 @@ namespace Plaintes.Controllers
             return RedirectToAction(nameof(AllAccounts));
         }
 
+        /// <summary>
+        /// Action de type POST qui va contrôler les valeurs reçues puis ajouter un utilisateur en base de données
+        /// </summary>
+        /// <param name="email">Email du nouvel utilisateur</param>
+        /// <param name="role">Role du nouvel utilisateur</param>
+        /// <returns></returns>
         [HttpPost("AddAccount")]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "A,S")]
-        public async Task<IActionResult> AddAccount(string name, string email, string role)
+        public async Task<IActionResult> AddAccount(string email, string role)
         {
-            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(role))
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(role))
             {
                 TempData["Erreur"] = "Tous les champs sont obligatoires.";
                 return RedirectToAction(nameof(AllAccounts));
@@ -97,10 +123,18 @@ namespace Plaintes.Controllers
                 return RedirectToAction(nameof(AllAccounts));
             }
 
-            await _utilisateurSrv.AddUser(name, email, role);
+            await _utilisateurSrv.AddUser(email, role);
             return RedirectToAction(nameof(AllAccounts));
         }
 
+        /// <summary>
+        /// Action de type POST qui va contrôler les nouvelles valeurs puis modifier l'utilisateur
+        /// </summary>
+        /// <param name="id">Id de l'utilisateur à modifier</param>
+        /// <param name="name">Nouveau nom de l'utilisateur (facultatif)</param>
+        /// <param name="email">Nouvel email de l'utilisateur</param>
+        /// <param name="role">Nouveau rôle de l'utilisateur</param>
+        /// <returns></returns>
         [HttpPost("EditAccount")]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "A,S")]
@@ -112,8 +146,8 @@ namespace Plaintes.Controllers
                 return NotFound();
             }
 
-            // Mêmes contrôles que pour l'ajout.
-            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(role))
+            // Mêmes contrôles que pour l'ajout. Le nom est facultatif : il vient de Microsoft à la première connexion de l'utilisateur.
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(role))
             {
                 TempData["Erreur"] = "Tous les champs sont obligatoires.";
                 return RedirectToAction(nameof(AllAccounts));
@@ -133,15 +167,23 @@ namespace Plaintes.Controllers
                 return RedirectToAction(nameof(AllAccounts));
             }
 
-            await _utilisateurSrv.UpdateUser(id, name, email, role);
+            // Nom laissé vide : on garde celui qui existe déjà (ou l'absence de nom, tant que l'utilisateur ne s'est pas connecté).
+            var nom = string.IsNullOrWhiteSpace(name) ? user.NomUser : name.Trim();
+            await _utilisateurSrv.UpdateUser(id, nom, email, role);
             return RedirectToAction(nameof(AllAccounts));
         }
 
+        /// <summary>
+        /// Simple action qui renvoie vers la vue affichant la confirmation de déconnexion
+        /// </summary>
+        /// <returns></returns>
         [HttpGet("Deconnecte")]
         public IActionResult Deconnecte() => View();
 
-        // Page « vous n'avez pas accès à cette page » (droits insuffisants, compte qui n'est plus actif).
-        // Visible sans être connecté ; la réponse porte le code 403 (accès interdit).
+        /// <summary>
+        /// Action renvoyant la page d'accès refusé
+        /// </summary>
+        /// <returns></returns>
         [HttpGet("AccesRefuse")]
         [AllowAnonymous]
         public IActionResult AccesRefuse()
