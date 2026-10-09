@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Plaintes.Data;
 using Plaintes.Services;
@@ -20,8 +23,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 
+builder.Services.AddMemoryCache();      // utilisée pour vérifier les sessions (voir ComptesClaims.SessionEstValideAsync)
 builder.Services.AddScoped<IUtilisateurSrv, UtilisateurSrv>();
 builder.Services.AddScoped<IPlainteSrv, PlainteSrv>();
+builder.Services.AddScoped<IStatistiquesSrv, StatistiquesSrv>();
 // MultipartBodyLengthLimit s'applique à chaque fichier d'un envoi : on le règle sur Storage:MaxSize (plus une marge), la taille totale
 // est relevée pour la création et la modification par LimiteEnvoiPiecesFilter.
 builder.Services.AddOptions<FormOptions>().Configure<IOptions<StorageSettings>>((o, s) => o.MultipartBodyLengthLimit = s.Value.MaxSize + 1024 * 1024);
@@ -29,10 +34,19 @@ builder.Services.AddScoped<LimiteEnvoiPiecesFilter>();
 
 builder.Host.UseSerilog((ctx, lc) => lc.MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+    .WriteTo.Console()      // lu par « docker logs »
     .WriteTo.File("Logs/log-.txt",
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 30)
     );
+
+// Clés qui chiffrent le cookie de connexion et les jetons anti-falsification. En conteneur, on les garde dans un dossier (volume) :
+// sinon elles disparaissent à chaque redéploiement et tout le monde est déconnecté.
+var dossierCles = builder.Configuration["DataProtection:Dossier"];
+if (!string.IsNullOrWhiteSpace(dossierCles))
+    builder.Services.AddDataProtection()
+        .SetApplicationName("Plaintes")
+        .PersistKeysToFileSystem(new DirectoryInfo(dossierCles));
 
 builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
 builder.Services.AddSingleton<IPieceStorage, FileSystemPieceStorage>();
@@ -47,9 +61,36 @@ builder.Services.AddAuthentication(opt =>
 {
     opt.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     opt.DefaultChallengeScheme = Saml2Defaults.Scheme;
+    opt.DefaultForbidScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 })
 .AddCookie(o =>
 {
+    // À chaque requête, on vérifie que l'utilisateur de la session est toujours actif : sinon la session est rejetée et le cookie supprimé
+    o.Events.OnValidatePrincipal = async ctx =>
+    {
+        if (ctx.Principal is null) return;
+        var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+        var cache = ctx.HttpContext.RequestServices.GetRequiredService<IMemoryCache>();
+        var etat = await ComptesClaims.EtatSessionAsync(ctx.Principal, db, cache);
+        if (!etat.Valide)
+        {
+            ctx.RejectPrincipal();
+            await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return;
+        }
+
+        // Le droit a changé en base : on met à jour le claim Role du cookie, sans que l'utilisateur ait à se reconnecter
+        if (!ComptesClaims.EstRefuse(ctx.Principal) && ctx.Principal.FindFirst(ClaimTypes.Role)?.Value != etat.Droit)
+        {
+            var identity = ((ClaimsIdentity)ctx.Principal.Identity!).Clone();
+            foreach (var ancien in identity.FindAll(ClaimTypes.Role).ToList())
+                identity.RemoveClaim(ancien);
+            if (!string.IsNullOrWhiteSpace(etat.Droit))
+                identity.AddClaim(new Claim(ClaimTypes.Role, etat.Droit));
+            ctx.ReplacePrincipal(new ClaimsPrincipal(identity));
+            ctx.ShouldRenew = true;
+        }
+    };
     o.Events.OnSigningIn = async ctx =>
     {
         var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
@@ -82,9 +123,10 @@ builder.Services.AddAuthentication(opt =>
             logger.LogInformation("Connexion de {Nomuser}", user.NomUser);
         }
 
-        // On conserve les claims SAML nécessaires à la déconnexion Microsoft
-        foreach (var c in ctx.Principal!.Claims.Where(c =>
-                     c.Type == Saml2ClaimTypes.LogoutNameIdentifier || c.Type == Saml2ClaimTypes.SessionIndex))
+        // On conserve le claim SAML nécessaire à la déconnexion Microsoft. On ne garde volontairement PAS l'index de session :
+        // le cookie de l'application vit plus longtemps que la session Microsoft, et un index périmé fait échouer la déconnexion
+        // (AADSTS50070). Sans index, Microsoft ferme la session en cours quelle qu'elle soit.
+        foreach (var c in ctx.Principal!.Claims.Where(c => c.Type == Saml2ClaimTypes.LogoutNameIdentifier))
             identity.AddClaim(c);
 
         ctx.Principal = new ClaimsPrincipal(identity);
@@ -93,7 +135,7 @@ builder.Services.AddAuthentication(opt =>
 .AddSaml2(opt =>
 {
     string url = builder.Configuration["Kestrel:Endpoints:Https:Url"];
-    opt.SPOptions.EntityId = new EntityId($"{url}/saml2");
+    opt.SPOptions.EntityId = new EntityId(builder.Configuration["Saml:SpEntityId"]);
 
     string idp = builder.Configuration["Saml:IdpEntityId"];
 
@@ -108,11 +150,15 @@ builder.Services.AddAuthentication(opt =>
 
     // comportement de signature des AuthnRequest (SPOptions)
     opt.SPOptions.AuthenticateRequestSigningBehavior = SigningBehavior.Never;
-    var path = Path.Combine(builder.Environment.ContentRootPath, "Sustainsys.Saml2.Tests2.pfx");
+    // Certificat du fournisseur de service
+    var certificat = builder.Configuration["Saml:CertificatPath"];
+    var path = string.IsNullOrWhiteSpace(certificat)
+        ? Path.Combine(builder.Environment.ContentRootPath, "Sustainsys.Saml2.Tests2.pfx")
+        : Path.GetFullPath(certificat, builder.Environment.ContentRootPath);
     opt.SPOptions.ServiceCertificates.Add(new X509Certificate2(path));
 });
 
-// Tout [Authorize] exige d'être connecté ET de ne pas être un compte refusé (échec : /Account/AccessDenied -> page « accès refusé »).
+// Tout [Authorize] exige d'être connecté ET de ne pas être un compte refusé
 builder.Services.AddAuthorization(o => o.DefaultPolicy = ComptesClaims.PolitiqueParDefaut());
 
 // Add services to the container.
@@ -129,13 +175,13 @@ try
 catch (Exception ex)
 {
     app.Logger.LogCritical(ex, "Stockage des pièces jointes inutilisable");
-    throw;      // l'appli refuse de démarrer
+    throw;
 }
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Home/Error");
+    app.UseExceptionHandler("/Error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }

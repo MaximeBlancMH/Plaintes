@@ -56,3 +56,9 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /.vs
+
+# Déploiement Docker : secrets locaux
+secrets/
+
+# Certificats : jamais dans git (le certificat SAML est monté à l'exécution)
+*.pfx

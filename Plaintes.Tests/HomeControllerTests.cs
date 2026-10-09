@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Controllers;
@@ -24,8 +24,6 @@ namespace Plaintes.Tests
 
         private sealed class PlainteSrvVide : IPlainteSrv
         {
-            public Task<List<Plainte>> getPlaintes() => Task.FromResult(new List<Plainte>());
-            public Task<PagedResult<Plainte>> getPlaintesForPage(int pageNumber, int pageSize) => Task.FromResult(new PagedResult<Plainte>());
             public Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize) => Task.FromResult(new PagedResult<Plainte>());
             public Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs) => Task.FromResult(new byte[0]);
             public Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail) => Task.FromResult(true);
@@ -45,20 +43,13 @@ namespace Plaintes.Tests
         }
 
         [Fact]
-        public void Privacy_RenvoieLaVue()
+        public void Error_AfficheLaVueAvecLeNumeroDeLaRequete()
         {
-            Assert.IsType<ViewResult>(_controller.Privacy());
-        }
+            _controller.ControllerContext.HttpContext.TraceIdentifier = "0HXYZ:00000001";
 
-        [Fact]
-        public void Error_RenvoieLaVueAvecLIdentifiantDeRequete()
-        {
-            _controller.HttpContext.TraceIdentifier = "trace-123";
+            var result = Assert.IsType<ViewResult>(_controller.Error());
 
-            var view = Assert.IsType<ViewResult>(_controller.Error());
-
-            var model = Assert.IsType<ErrorViewModel>(view.Model);
-            Assert.False(string.IsNullOrEmpty(model.RequestId));
+            Assert.Equal("0HXYZ:00000001", result.ViewData["IdDemande"]);
         }
     }
 }

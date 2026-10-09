@@ -316,3 +316,208 @@ body > .container {
   color: #fff;
   background-color: #dc3545;
 }
+
+/* Page d'erreur : même carte que « accès refusé », avec l'orange de l'avertissement. */
+.erreur-card {
+  border-top: 4px solid #f39c12;
+}
+
+.erreur-icone {
+  width: 64px;
+  height: 64px;
+  line-height: 64px;
+  margin-inline: auto;
+  border-radius: 50%;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+  background-color: #f39c12;
+}
+
+.erreur-code {
+  user-select: all;
+  word-break: break-all;
+}
+
+/* Page « Statistiques » : graphiques dessinés en SVG par js/statistiques.js (pas de librairie). */
+.stat-carte {
+  border: 0;
+  border-left: 4px solid var(--mh-green);
+  border-radius: .5rem;
+}
+
+.stat-chiffre {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--mh-blue);
+}
+
+.stat-libelle {
+  font-size: .85rem;
+  color: #6c757d;
+}
+
+.stat-bulle {
+  position: fixed;
+  display: none;
+  z-index: 2000;
+  max-width: 320px;
+  padding: .35rem .6rem;
+  border-radius: .4rem;
+  font-size: .8rem;
+  color: #fff;
+  background: rgba(34, 62, 81, .95);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .2);
+  pointer-events: none;
+}
+
+.stat-svg { display: block; width: 100%; height: auto; }
+.stat-grille { stroke: #e3e8ec; stroke-width: 1; }
+.stat-axe { font-size: 11px; fill: #6c757d; }
+.stat-repere { stroke: var(--mh-blue); stroke-width: 1; stroke-dasharray: 3 3; }
+.stat-point { fill: #fff; stroke: var(--mh-green-dark); stroke-width: 3; pointer-events: none; }
+.stat-point-fixe { fill: var(--mh-green-dark); }
+
+.stat-trait {
+  fill: none;
+  stroke: var(--mh-green-dark);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: stat-tracer 1.2s ease-out forwards;
+}
+
+.stat-trait-prec {
+  fill: none;
+  stroke: var(--mh-blue);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  opacity: .55;
+}
+
+.stat-aire { animation: stat-apparaitre 1.2s ease-out both; }
+
+.stat-legende-courbe {
+  display: flex;
+  gap: 1.25rem;
+  font-size: .8rem;
+  color: #6c757d;
+}
+
+.stat-legende-courbe i {
+  display: inline-block;
+  width: 1.4rem;
+  margin-right: .35rem;
+  vertical-align: middle;
+  border-top: 3px solid var(--mh-green-dark);
+}
+
+.stat-legende-courbe i.prec {
+  border-top: 2px dashed var(--mh-blue);
+  opacity: .7;
+}
+
+.stat-anneau {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.stat-svg-anneau { width: 190px; height: 190px; flex: none; }
+
+.stat-part {
+  stroke: #fff;
+  stroke-width: 1.5;
+  cursor: pointer;
+  transition: transform .15s;
+  animation: stat-apparaitre .6s ease-out both;
+}
+
+.stat-centre-valeur { font-size: 26px; font-weight: 700; fill: var(--mh-blue); }
+.stat-centre-libelle { font-size: 11px; fill: #6c757d; }
+
+.stat-legende {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-width: 140px;
+  font-size: .85rem;
+}
+
+.stat-legende li {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .15rem .35rem;
+  border-radius: .3rem;
+  cursor: default;
+}
+
+.stat-legende li.actif { background: #eef3f6; }
+.stat-puce { width: .7rem; height: .7rem; border-radius: 50%; flex: none; }
+.stat-legende-nom { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-legende-valeur { font-weight: 600; }
+
+.stat-svg-jauge { display: block; width: 100%; max-width: 280px; margin: 0 auto; }
+
+.stat-jauge-fond,
+.stat-jauge-valeur {
+  fill: none;
+  stroke-width: 20;
+  stroke-linecap: round;
+}
+
+.stat-jauge-fond { stroke: #e3e8ec; }
+
+.stat-jauge-valeur {
+  stroke: var(--mh-green);
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: stat-jauge 1.2s ease-out both;
+}
+
+.stat-treemap { position: relative; width: 100%; }
+
+.stat-tuile {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: .5rem .6rem;
+  overflow: hidden;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: .4rem;
+  transition: filter .15s;
+  animation: stat-apparaitre .6s ease-out both;
+}
+
+.stat-tuile:hover { filter: brightness(1.12); }
+.stat-tuile-nom { font-size: .8rem; line-height: 1.15; font-weight: 600; }
+.stat-tuile-valeur { font-size: 1.15rem; font-weight: 700; }
+
+.stat-svg-radar { display: block; width: 100%; max-width: 420px; margin: 0 auto; }
+.stat-grille-radar { fill: none; stroke: #e3e8ec; stroke-width: 1; }
+
+.stat-radar {
+  fill: rgba(120, 190, 32, .3);
+  stroke: var(--mh-green-dark);
+  stroke-width: 2;
+  animation: stat-apparaitre 1s ease-out both;
+}
+
+.stat-point-radar { fill: var(--mh-green-dark); stroke: #fff; stroke-width: 2; cursor: pointer; }
+
+@keyframes stat-tracer { to { stroke-dashoffset: 0; } }
+@keyframes stat-jauge { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes stat-apparaitre { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-trait, .stat-aire, .stat-part, .stat-tuile, .stat-radar, .stat-jauge-valeur { animation: none; stroke-dashoffset: 0; }
+}

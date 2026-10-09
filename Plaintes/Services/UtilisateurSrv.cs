@@ -81,7 +81,7 @@ namespace Plaintes.Services
         }
 
         /// <summary>
-        /// Fonction qui "supprime" un utilisateur. On passe sa DateFinu à aujourd'hui pour notifier que sa période d'utilisation est terminée
+        /// Fonction qui "supprime" un utilisateur. On passe sa DateFinu à hier : le compte est refusé immédiatement, sans attendre la fin de la journée
         /// </summary>
         /// <param name="idUser">Id de l'utilisateur</param>
         /// <returns></returns>
@@ -94,7 +94,7 @@ namespace Plaintes.Services
                 return;
             }
 
-            user.DateFinu = DateOnly.FromDateTime(DateTime.Now);
+            user.DateFinu = DateOnly.FromDateTime(DateTime.Now.AddDays(-1));
             await _context.SaveChangesAsync();
         }
 

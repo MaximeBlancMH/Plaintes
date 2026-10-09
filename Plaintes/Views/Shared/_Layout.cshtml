@@ -17,6 +17,10 @@
             var compteNom = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
             var compteEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
             var compteDroit = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            // Un lien du menu n'est affiché que si l'utilisateur a le droit d'ouvrir la page (mêmes rôles que les actions des contrôleurs)
+            var peutSaisir = User.IsInRole("W") || User.IsInRole("A") || User.IsInRole("S");
+            var peutGererUtilisateurs = User.IsInRole("A") || User.IsInRole("S");
+            var peutGererTables = User.IsInRole("S");
             // Renvoie " active" si l'adresse de la page commence par celle du lien (sauf pour l'adresse à exclure)
             string Active(string lien, string? exclure = null) =>
                 chemin.StartsWith(lien, StringComparison.OrdinalIgnoreCase)
@@ -40,15 +44,27 @@
                             <li class="nav-item">
                                 <a class="nav-link@(Active("/Dossiers", "/Dossiers/Creer"))" href="/Dossiers">Dossiers</a>
                             </li>
+                            @if (peutSaisir)
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link@(Active("/Dossiers/Creer"))" href="/Dossiers/Creer">Saisir un dossier</a>
+                                </li>
+                            }
                             <li class="nav-item">
-                                <a class="nav-link@(Active("/Dossiers/Creer"))" href="/Dossiers/Creer">Saisir un dossier</a>
+                                <a class="nav-link@(Active("/Statistiques"))" href="/Statistiques">Statistiques</a>
                             </li>
-                            <li class="nav-item">
-                                <a class="nav-link@(Active("/Account/AllAccounts"))" href="/Account/AllAccounts">Gestion Utilisateurs</a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link@(Active("/GestionTables"))" href="/GestionTables">Gestion des tables</a>
-                            </li>
+                            @if (peutGererUtilisateurs)
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link@(Active("/Account/AllAccounts"))" href="/Account/AllAccounts">Gestion Utilisateurs</a>
+                                </li>
+                            }
+                            @if (peutGererTables)
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link@(Active("/GestionTables"))" href="/GestionTables">Gestion des tables</a>
+                                </li>
+                            }
                         </ul>
                         @* Nom de l'utilisateur (infos au survol) et bouton de déconnexion *@
                         <div class="navbar-user d-flex align-items-lg-center flex-column flex-lg-row gap-2 gap-lg-3 pt-2 pt-lg-0">

@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
@@ -74,16 +74,16 @@ namespace Plaintes.Tests
         internal sealed class FauxUtilisateurSrv : IUtilisateurSrv
         {
             public List<Utilisateur> Utilisateurs { get; } = new();
-            public List<(string Nom, string Email, string Role)> Ajouts { get; } = new();
+            public List<(string Email, string Role)> Ajouts { get; } = new();
             public List<int> Suppressions { get; } = new();
-            public List<(int Id, string Nom, string Email, string Role)> Modifications { get; } = new();
+            public List<(int Id, string? Nom, string Email, string Role)> Modifications { get; } = new();
 
             public Task UpdateNameUser(int idUser, string newName) => Task.CompletedTask;
             public Task<List<Utilisateur>> GetAllUsers() => Task.FromResult(Utilisateurs);
             public Task<Utilisateur?> GetUserById(int idUser) => Task.FromResult(Utilisateurs.FirstOrDefault(u => u.IdUser == idUser));
             public Task DeleteUser(int idUser) { Suppressions.Add(idUser); return Task.CompletedTask; }
-            public Task AddUser(string name, string email, string role) { Ajouts.Add((name, email, role)); return Task.CompletedTask; }
-            public Task UpdateUser(int idUser, string newName, string newEmail, string newRole) { Modifications.Add((idUser, newName, newEmail, newRole)); return Task.CompletedTask; }
+            public Task AddUser(string email, string role) { Ajouts.Add((email, role)); return Task.CompletedTask; }
+            public Task UpdateUser(int idUser, string? newName, string newEmail, string newRole) { Modifications.Add((idUser, newName, newEmail, newRole)); return Task.CompletedTask; }
         }
 
         [Fact]
@@ -106,23 +106,23 @@ namespace Plaintes.Tests
         {
             var srv = new FauxUtilisateurSrv();
 
-            var result = Assert.IsType<RedirectToActionResult>(await CreerController(srv).AddAccount("Dupont", "dupont@test.fr", role));
+            var result = Assert.IsType<RedirectToActionResult>(await CreerController(srv).AddAccount("dupont@test.fr", role));
 
             Assert.Equal("AllAccounts", result.ActionName);
-            Assert.Equal(("Dupont", "dupont@test.fr", role), Assert.Single(srv.Ajouts));
+            Assert.Equal(("dupont@test.fr", role), Assert.Single(srv.Ajouts));
         }
 
         [Theory]
-        [InlineData("", "d@test.fr", "R")]
-        [InlineData("Dupont", "", "R")]
-        [InlineData("Dupont", "d@test.fr", "")]
-        [InlineData("  ", "d@test.fr", "R")]
-        [InlineData(null, "d@test.fr", "R")]
-        public async Task AddAccount_ChampManquant_NAjouteRien(string? nom, string? email, string? role)
+        [InlineData("", "R")]
+        [InlineData("  ", "R")]
+        [InlineData(null, "R")]
+        [InlineData("d@test.fr", "")]
+        [InlineData("d@test.fr", null)]
+        public async Task AddAccount_ChampManquant_NAjouteRien(string? email, string? role)
         {
             var srv = new FauxUtilisateurSrv();
 
-            var result = await CreerController(srv).AddAccount(nom!, email!, role!);
+            var result = await CreerController(srv).AddAccount(email!, role!);
 
             Assert.IsType<RedirectToActionResult>(result);
             Assert.Empty(srv.Ajouts);
@@ -136,7 +136,7 @@ namespace Plaintes.Tests
         {
             var srv = new FauxUtilisateurSrv();
 
-            await CreerController(srv).AddAccount("Dupont", "d@test.fr", role);
+            await CreerController(srv).AddAccount("d@test.fr", role);
 
             Assert.Empty(srv.Ajouts);
         }
@@ -146,7 +146,7 @@ namespace Plaintes.Tests
         {
             var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, UserEmail = "Dupont@Test.fr" } } };
 
-            await CreerController(srv).AddAccount("Autre", "dupont@test.FR", "R");
+            await CreerController(srv).AddAccount("dupont@test.FR", "R");
 
             Assert.Empty(srv.Ajouts);
         }
@@ -157,7 +157,7 @@ namespace Plaintes.Tests
             // UserEmail est facultatif en base : la recherche de doublon ne doit pas échouer sur un e-mail absent.
             var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, UserEmail = null } } };
 
-            await CreerController(srv).AddAccount("Dupont", "dupont@test.fr", "R");
+            await CreerController(srv).AddAccount("dupont@test.fr", "R");
 
             Assert.Single(srv.Ajouts);
         }
@@ -193,7 +193,7 @@ namespace Plaintes.Tests
         {
             var c = CreerController();
 
-            await c.AddAccount("Dupont", "dupont@test.fr", "R");
+            await c.AddAccount("dupont@test.fr", "R");
 
             Assert.Null(Erreur(c));
         }
@@ -203,7 +203,7 @@ namespace Plaintes.Tests
         {
             var c = CreerController();
 
-            await c.AddAccount("", "dupont@test.fr", "R");
+            await c.AddAccount("", "R");
 
             Assert.Equal("Tous les champs sont obligatoires.", Erreur(c));
         }
@@ -213,7 +213,7 @@ namespace Plaintes.Tests
         {
             var c = CreerController();
 
-            await c.AddAccount("Dupont", "dupont@test.fr", "X");
+            await c.AddAccount("dupont@test.fr", "X");
 
             Assert.Contains("rôle", Erreur(c));
         }
@@ -223,7 +223,7 @@ namespace Plaintes.Tests
         {
             var c = CreerController(new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, UserEmail = "dupont@test.fr" } } });
 
-            await c.AddAccount("Autre", "dupont@test.fr", "R");
+            await c.AddAccount("dupont@test.fr", "R");
 
             Assert.Contains("existe déjà", Erreur(c));
         }
@@ -291,6 +291,44 @@ namespace Plaintes.Tests
             Assert.Null(Erreur(c));
         }
 
+        [Theory]
+        [InlineData("")]
+        [InlineData("   ")]
+        [InlineData(null)]
+        public async Task EditAccount_NomVide_GardeLeNomExistant_SansErreur(string? nom)
+        {
+            var srv = DeuxUtilisateurs();
+            var c = CreerController(srv);
+
+            await c.EditAccount(1, nom!, "un@test.fr", "W");
+
+            Assert.Equal((1, "Un", "un@test.fr", "W"), Assert.Single(srv.Modifications));
+            Assert.Null(Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_UtilisateurSansNom_PeutEtreModifie_EtResteSansNom()
+        {
+            // Un utilisateur ajouté n'a pas de nom avant sa première connexion : modifier ses droits ne doit pas exiger un nom.
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 5, NomUser = null, UserEmail = "nouveau@test.fr", Access = "R" } } };
+            var c = CreerController(srv);
+
+            await c.EditAccount(5, "", "nouveau@test.fr", "W");
+
+            Assert.Equal((5, (string?)null, "nouveau@test.fr", "W"), Assert.Single(srv.Modifications));
+            Assert.Null(Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_NomRenseigne_EstEnregistre_SansEspacesAutour()
+        {
+            var srv = DeuxUtilisateurs();
+
+            await CreerController(srv).EditAccount(1, "  Nouveau nom  ", "un@test.fr", "R");
+
+            Assert.Equal("Nouveau nom", Assert.Single(srv.Modifications).Nom);
+        }
+
         [Fact]
         public async Task EditAccount_GardeLEmailActuel_EstAccepte()
         {
@@ -315,10 +353,10 @@ namespace Plaintes.Tests
         }
 
         [Theory]
-        [InlineData("", "a@test.fr", "R")]
         [InlineData("Nom", " ", "R")]
         [InlineData("Nom", "a@test.fr", "")]
-        [InlineData(null, "a@test.fr", "R")]
+        [InlineData(null, "", "R")]
+        [InlineData("", "a@test.fr", null)]
         public async Task EditAccount_ChampManquant_NeModifieRien_EtAfficheUneErreur(string? nom, string? email, string? role)
         {
             var srv = DeuxUtilisateurs();
@@ -412,6 +450,14 @@ namespace Plaintes.Tests
 
             Assert.NotNull(methode.GetCustomAttribute<HttpPostAttribute>());
             Assert.NotNull(methode.GetCustomAttribute<ValidateAntiForgeryTokenAttribute>());
+        }
+
+        [Fact]
+        public void AddAccount_NePrendPasDeNom_LeNomVientDeMicrosoftALaPremiereConnexion()
+        {
+            var noms = typeof(AccountController).GetMethod(nameof(AccountController.AddAccount))!.GetParameters().Select(p => p.Name);
+
+            Assert.Equal(new[] { "email", "role" }, noms);
         }
 
         [Fact]

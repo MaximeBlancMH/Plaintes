@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Data;
 using Plaintes.Models;
 using Plaintes.Services;
@@ -79,15 +79,15 @@ namespace Plaintes.Tests
         // ---------- AddUser ----------
 
         [Fact]
-        public async Task AddUser_EnregistreNomEmailEtDroit()
+        public async Task AddUser_EnregistreEmailEtDroit_SansNom()
         {
             var (ctx, srv) = await Creer();
             using var _ = ctx;
 
-            await srv.AddUser("Dupont", "dupont@test.fr", "W");
+            await srv.AddUser("dupont@test.fr", "W");
 
             var user = Assert.Single(ctx.Utilisateurs);
-            Assert.Equal("Dupont", user.NomUser);
+            Assert.Null(user.NomUser);      // le nom vient de Microsoft à la première connexion (UpdateNameUser)
             Assert.Equal("dupont@test.fr", user.UserEmail);
             Assert.Equal("W", user.Access);
         }
@@ -124,9 +124,9 @@ namespace Plaintes.Tests
 
         // ---------- DeleteUser ----------
 
-        // Suppression logique : l'utilisateur reste en base (ses plaintes gardent leur créateur), avec une date de fin à aujourd'hui.
+        // Suppression logique : l'utilisateur reste en base (ses plaintes gardent leur créateur), avec une date de fin à hier (le compte est refusé tout de suite).
         [Fact]
-        public async Task DeleteUser_MetUneDateDeFinAujourdhui_SansSupprimerLaLigne_NiToucherAuxAutres()
+        public async Task DeleteUser_MetUneDateDeFinHier_SansSupprimerLaLigne_NiToucherAuxAutres()
         {
             var (ctx, srv) = await Creer(new Utilisateur { IdUser = 1 }, new Utilisateur { IdUser = 2 });
             using var _ = ctx;
@@ -134,7 +134,7 @@ namespace Plaintes.Tests
             await srv.DeleteUser(1);
 
             Assert.Equal(2, ctx.Utilisateurs.Count());
-            Assert.Equal(DateOnly.FromDateTime(DateTime.Now), (await ctx.Utilisateurs.FindAsync(1))!.DateFinu);
+            Assert.Equal(DateOnly.FromDateTime(DateTime.Now.AddDays(-1)), (await ctx.Utilisateurs.FindAsync(1))!.DateFinu);
             Assert.Null((await ctx.Utilisateurs.FindAsync(2))!.DateFinu);
         }
 

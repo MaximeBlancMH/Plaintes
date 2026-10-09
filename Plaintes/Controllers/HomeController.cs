@@ -30,10 +30,24 @@ namespace Plaintes.Controllers
         public IActionResult Index() => RedirectToAction("Dossiers", "Dossier");
 
         /// <summary>
+        /// Action appelée par le gestionnaire d'erreurs de l'application (voir Program.cs) quand une exception n'est pas traitée.
+        /// On affiche une page d'erreur avec le numéro de la requête, à communiquer à un administrateur : c'est celui qui figure dans les journaux
+        /// </summary>
+        /// <returns></returns>
+        [AllowAnonymous]
+        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+        [Route("Error")]
+        public IActionResult Error()
+        {
+            ViewData["IdDemande"] = HttpContext.TraceIdentifier;
+            return View();
+        }
+
+        /// <summary>
         /// Action qui récupère le contenu des tables où on peut ajouter des nouvelles valeurs. On affiche ensuite la vue associée
         /// </summary>
         /// <returns></returns>
-        [Authorize(Roles = "A,S")]
+        [Authorize(Roles = "S")]
         [Route("GestionTables")]
         public async Task<IActionResult> GestionTables()
         {
@@ -62,7 +76,7 @@ namespace Plaintes.Controllers
         /// <returns></returns>
         [HttpPost]
         [ValidateAntiForgeryToken]
-        [Authorize(Roles = "A,S")]
+        [Authorize(Roles = "S")]
         [Route("GestionTables/DeleteElement")]
         public async Task<IActionResult> deleteElement(string cat, string code)
         {
@@ -95,7 +109,7 @@ namespace Plaintes.Controllers
         /// <returns></returns>
         [HttpPost]
         [ValidateAntiForgeryToken]
-        [Authorize(Roles = "A,S")]
+        [Authorize(Roles = "S")]
         [Route("GestionTables/AddElement")]
         public async Task<IActionResult> addElement(string cat, IFormCollection form)
         {

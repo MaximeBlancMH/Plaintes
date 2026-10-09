@@ -34,16 +34,3 @@
         </div>
     </div>
 </div>
-
-@* Zone de test TEMPORAIRE (Development uniquement) : voir Views/Shared/_ZoneTest.cshtml. *@
-@{
-    var casAcces = new List<CasTest>
-    {
-        new("Pages d'accès", "Cette page (accès refusé)", "Page « accès refusé » (code 403)", "~/Account/AccesRefuse"),
-        new("Pages d'accès", "AccessDenied", "Redirige vers cette page", "~/Account/AccessDenied"),
-        new("Pages d'accès", "Gestion des utilisateurs", "Sans droit A ou S : redirige ici ; sinon, la page des utilisateurs", "~/Account/AllAccounts"),
-        new("Pages d'accès", "Page de déconnexion", "Page « Vous êtes déconnecté »", "~/Account/Deconnecte"),
-        new("Pages d'accès", "Page d'erreur", "Page d'erreur de l'application", "~/Home/Error"),
-    };
-}
-<partial name="_ZoneTest" model="casAcces" />

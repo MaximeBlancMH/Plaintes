@@ -47,7 +47,7 @@ namespace Plaintes.Tests
         }
 
         private static PieceExport Piece(int num, string nom, TypePieceExport type, byte[]? contenu, string? erreur = null) =>
-            new(num, nom, Path.GetExtension(nom).ToLowerInvariant(), type, "Facture", contenu, erreur);
+            new(num, nom, Path.GetExtension(nom).ToLowerInvariant(), type, contenu, erreur);
 
         private static (PdfSharpAssembleur, FauxConvertisseur) Creer()
         {
@@ -215,7 +215,7 @@ namespace Plaintes.Tests
             var pdfPlainte = await conv.ConvertirEnPdfAsync(docx, ".docx");
             var r = await assembleur.AssemblerAsync(pdfPlainte, new[]
             {
-                new PieceExport(1, "annexe.docx", ".docx", TypePieceExport.Word, "Autre", docx, null),
+                new PieceExport(1, "annexe.docx", ".docx", TypePieceExport.Word, docx, null),
             });
             Assert.Empty(r.NonJointes);
             using var res = new MemoryStream(r.Pdf);

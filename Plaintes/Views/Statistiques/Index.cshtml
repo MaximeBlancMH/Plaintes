@@ -1,0 +1,131 @@
+@model StatistiquesViewModel
+@{
+    ViewData["Title"] = "Statistiques";
+    var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+    var periode = Model.Annee.HasValue ? $"en {Model.Annee}" : "sur toutes les années";
+}
+
+@* Titre et choix de la période *@
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 my-4">
+    <h1 class="h3 mb-0 titre-mh">Statistiques</h1>
+    <form method="get" class="d-flex align-items-center gap-2 m-0">
+        <label for="annee" class="form-label mb-0 text-muted">Période</label>
+        <select id="annee" name="annee" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+            <option value="" selected="@(!Model.Annee.HasValue)">Toutes les années</option>
+            @foreach (var a in Model.Annees)
+            {
+                <option value="@a" selected="@(Model.Annee == a)">@a</option>
+            }
+        </select>
+    </form>
+</div>
+
+@if (Model.Total == 0)
+{
+    <div class="card shadow-sm card-mh">
+        <div class="card-body text-center text-muted py-5">Aucun dossier @periode.</div>
+    </div>
+}
+else
+{
+    @* Chiffres clés *@
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre">@Model.Total.ToString("N0", fr)</div>
+                <div class="stat-libelle">Dossiers @periode</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre">@Model.EnCours.ToString("N0", fr)</div>
+                <div class="stat-libelle">Dossiers en cours</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre">@Model.CoutTotal.ToString("N0", fr)&nbsp;€</div>
+                <div class="stat-libelle">Coût total</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre">@Model.CoutMoyen.ToString("N0", fr)&nbsp;€</div>
+                <div class="stat-libelle">Coût moyen par dossier</div>
+            </div></div>
+        </div>
+    </div>
+
+    @* Évolution : courbe par mois pour une année (comparée à l'année d'avant), par année sinon *@
+    <div class="card shadow-sm card-mh mb-4">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span class="h6 mb-0">Évolution @(Model.Annee.HasValue ? "mensuelle" : "annuelle")</span>
+            <div class="stat-legende-courbe">
+                <span><i></i>@(Model.Annee?.ToString() ?? "Dossiers")</span>
+                @if (Model.Annee.HasValue)
+                {
+                    <span><i class="prec"></i>@(Model.Annee - 1)</span>
+                }
+            </div>
+        </div>
+        <div class="card-body"><div id="grapheEvolution"></div></div>
+    </div>
+
+    @* Répartitions : secteurs (anneau), catégories (camembert) et part des dossiers en cours (jauge) *@
+    <div class="row g-4 mb-4">
+        <div class="col-lg-4">
+            <div class="card shadow-sm card-mh h-100">
+                <div class="card-header h6 mb-0">Par secteur</div>
+                <div class="card-body d-flex align-items-center justify-content-center"><div id="grapheSecteurs" class="w-100"></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm card-mh h-100">
+                <div class="card-header h6 mb-0">Par catégorie</div>
+                <div class="card-body d-flex align-items-center justify-content-center"><div id="grapheCategories" class="w-100"></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm card-mh h-100">
+                <div class="card-header h6 mb-0">Avancement</div>
+                <div class="card-body d-flex align-items-center justify-content-center"><div id="grapheEnCours" class="w-100"></div></div>
+            </div>
+        </div>
+    </div>
+
+    @* Cités les plus touchées (carte proportionnelle) et nuisances les plus fréquentes (radar) *@
+    <div class="row g-4 mb-4">
+        <div class="col-lg-7">
+            <div class="card shadow-sm card-mh h-100">
+                <div class="card-header h6 mb-0">Cités les plus touchées</div>
+                <div class="card-body"><div id="grapheCites"></div></div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card shadow-sm card-mh h-100">
+                <div class="card-header h6 mb-0">Nuisances les plus fréquentes</div>
+                <div class="card-body d-flex align-items-center"><div id="grapheNuisances" class="w-100"></div></div>
+            </div>
+        </div>
+    </div>
+
+    @* Info-bulle partagée par tous les graphiques *@
+    <div id="statBulle" class="stat-bulle" role="tooltip"></div>
+
+    @* Données lues par le script qui dessine les graphiques *@
+    <script type="application/json" id="donneesStats">@Html.Raw(Json.Serialize(new
+    {
+        total = Model.Total,
+        enCours = Model.EnCours,
+        evolution = Model.Evolution,
+        evolutionPrecedente = Model.EvolutionPrecedente,
+        secteurs = Model.Secteurs,
+        categories = Model.Categories,
+        cites = Model.Cites,
+        nuisances = Model.Nuisances
+    }))</script>
+}
+
+@section Scripts {
+    <script src="~/js/statistiques.js" asp-append-version="true"></script>
+}

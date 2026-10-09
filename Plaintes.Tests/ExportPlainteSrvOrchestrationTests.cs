@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Models;
 using Plaintes.Services.Export;
 using Plaintes.Services.IServices;
@@ -11,8 +11,6 @@ namespace Plaintes.Tests
         {
             public Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte) => Task.FromResult(new Dictionary<string, string>());
             public Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs) => Task.FromResult(new byte[] { 1 });
-            public Task<List<Plainte>> getPlaintes() => throw new NotImplementedException();
-            public Task<PagedResult<Plainte>> getPlaintesForPage(int pageNumber, int pageSize) => throw new NotImplementedException();
             public Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize) => throw new NotImplementedException();
             public Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail) => throw new NotImplementedException();
             public Task<bool> updatePlainte(CreatePlainteViewModel model) => throw new NotImplementedException();
@@ -64,7 +62,7 @@ namespace Plaintes.Tests
         }
 
         private static PieceExport Word(int num, byte marqueur) =>
-            new(num, $"p{num}.docx", ".docx", TypePieceExport.Word, "Autre", new[] { marqueur }, null);
+            new(num, $"p{num}.docx", ".docx", TypePieceExport.Word, new[] { marqueur }, null);
 
         private static (ExportPlainteSrv, FauxConvertisseur, FauxRecuperateur, AssembleurEspion) Creer()
         {
@@ -82,7 +80,7 @@ namespace Plaintes.Tests
             var (srv, conv, rec, asm) = Creer();
             rec.Pieces = new()
             {
-                new(1, "a.pdf", ".pdf", TypePieceExport.Pdf, "Facture", new byte[] { 7 }, null),
+                new(1, "a.pdf", ".pdf", TypePieceExport.Pdf, new byte[] { 7 }, null),
                 Word(2, 2),
                 Word(3, 3),
             };
@@ -150,7 +148,7 @@ namespace Plaintes.Tests
         public async Task PieceDejaEnErreur_EstTransmiseSansConversion()
         {
             var (srv, conv, rec, asm) = Creer();
-            rec.Pieces = new() { new(1, "x.docx", ".docx", TypePieceExport.Word, "Autre", null, "Le fichier de cette pièce est introuvable.") };
+            rec.Pieces = new() { new(1, "x.docx", ".docx", TypePieceExport.Word, null, "Le fichier de cette pièce est introuvable.") };
 
             await srv.ExporterPdfAsync(UnePlainte);
 

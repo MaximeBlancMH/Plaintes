@@ -73,7 +73,7 @@ namespace Plaintes.Controllers
         /// Récupère les propositions possibles pour les listes déroulantes et affiche la page de création d'une plainte
         /// </summary>
         /// <returns></returns>
-        [Authorize]
+        [Authorize(Roles = "W, A, S")]
         [HttpGet("Creer")]
         public async Task<IActionResult> Saisie()
         {
@@ -88,7 +88,7 @@ namespace Plaintes.Controllers
         /// </summary>
         /// <param name="model">Model contenant les informations saisies de la nouvelle plainte</param>
         /// <returns></returns>
-        [Authorize]
+        [Authorize(Roles = "W, A, S")]
         [HttpPost("Creer")]
         [ServiceFilter(typeof(LimiteEnvoiPiecesFilter), Order = int.MinValue)]
         [ValidateAntiForgeryToken]
@@ -240,7 +240,7 @@ namespace Plaintes.Controllers
         /// </summary>
         /// <param name="id">Id de la plainte à supprimer</param>
         /// <returns></returns>
-        [Authorize]
+        [Authorize(Roles = "W, A, S")]
         [Route("{id:int}/delete")]
         public async Task<IActionResult> SupprimerPlainte(int id)
         {
@@ -264,7 +264,7 @@ namespace Plaintes.Controllers
         /// </summary>
         /// <param name="id">Id de la plainte à modifier</param>
         /// <returns></returns>
-        [Authorize]
+        [Authorize(Roles = "W, A, S")]
         [HttpGet("{id:int}/update")]
         public async Task<IActionResult> ModifierPlainte(int id)
         {
@@ -321,7 +321,7 @@ namespace Plaintes.Controllers
         /// <param name="id">Id de la plainte à modifier</param>
         /// <param name="model">View Model de la plainte qui contient ses nouvelles données</param>
         /// <returns></returns>
-        [Authorize]
+        [Authorize(Roles = "W, A, S")]
         [HttpPost("{id:int}/update")]
         [ServiceFilter(typeof(LimiteEnvoiPiecesFilter), Order = int.MinValue)]
         [ValidateAntiForgeryToken]

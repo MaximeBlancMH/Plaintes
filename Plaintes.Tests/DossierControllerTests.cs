@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Controllers;
@@ -44,9 +44,7 @@ namespace Plaintes.Tests
             public int Page { get; private set; }
             public int PageSize { get; private set; }
 
-            public Task<List<Plainte>> getPlaintes() => Task.FromResult(Resultat.Plaintes);
 
-            public Task<PagedResult<Plainte>> getPlaintesForPage(int pageNumber, int pageSize) => Task.FromResult(Resultat);
 
             public Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize)
             {

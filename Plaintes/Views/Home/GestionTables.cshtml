@@ -2,7 +2,7 @@
    Deux blocs : Lieux (Cité -> Rue -> Bâtiment, et Partie commune) et Types (Catégorie -> Sous-catégorie -> Nuisance).
    Une ligne par liste déroulante, avec un bouton « Ajouter » qui ouvre, sous la ligne, le formulaire d'ajout d'un élément rattaché à la
    sélection du parent. Une liste reste grisée tant que son parent n'est pas choisi.
-   Pour l'instant, seul l'affichage existe : valider un formulaire montre un aperçu de ce qui serait créé (avec son parent), sans rien enregistrer. *@
+   L'ajout et la suppression se font sans recharger la page (POST vers addElement et deleteElement, voir HomeController). *@
 @model GestionTablesViewModel
 @{
     ViewData["Title"] = "Gestion des tables";
@@ -26,29 +26,6 @@
         categories = Model.Categories.Where(c => !c.SupprCat).OrderBy(c => c.LibCat).Select(c => new { code = c.CodeCat, lib = c.LibCat }),
         sousCategories = Model.SousCategories.Where(s => !s.SupprSousCat).OrderBy(s => s.LibSousCat).Select(s => new { code = s.CodeSousCat, cat = s.CodeCat, lib = s.LibSousCat }),
         nuisances = Model.Nuisances.Where(n => !n.SupprNuisance).OrderBy(n => n.LibNuisance).Select(n => new { code = n.CodeNuisance, sousCat = n.CodeSousCat, lib = n.LibNuisance })
-    };
-
-    // Zone de test TEMPORAIRE (Development uniquement) : voir Views/Shared/_ZoneTest.cshtml. Les cas sont joués par le script de la page.
-    var casTables = new List<CasTest>
-    {
-        new("Sélection par parent", "Parcours Cité → Rue → Bâtiment", "Les trois listes se remplissent l'une après l'autre", Script: "parcoursLieux"),
-        new("Sélection par parent", "Cité sans aucune rue", "La liste des rues indique « Aucune rue » et le bâtiment reste grisé", Script: "citeSansRue"),
-        new("Sélection par parent", "Changer de cité après avoir choisi une rue", "La rue et le bâtiment sont remis à zéro", Script: "changerCite"),
-        new("Sélection par parent", "Parcours Catégorie → Sous-catégorie → Nuisance", "Les trois listes se remplissent l'une après l'autre", Script: "parcoursTypes"),
-        new("Sélection par parent", "Catégorie sans sous-catégorie", "La liste des sous-catégories indique « Aucune sous-catégorie »", Script: "catSansSousCat"),
-        new("Sélection par parent", "Tout remettre à zéro", "Toutes les listes reviennent à « Choisir »", Script: "toutVider"),
-        new("Formulaires d'ajout (aperçu seulement)", "Rue : formulaire vide", "Le navigateur signale le champ obligatoire", Script: "rueVide"),
-        new("Formulaires d'ajout (aperçu seulement)", "Cité : secteur « Autre »", "Le champ de saisie apparaît ; aperçu avec le secteur en majuscules", Script: "citeAutre"),
-        new("Formulaires d'ajout (aperçu seulement)", "Rue valide (rattachée à la cité)", "Aperçu avec NumCite du parent", Script: "rueValide"),
-        new("Formulaires d'ajout (aperçu seulement)", "Bâtiment valide (cité + rue)", "Aperçu avec NumCite et CodeRue du parent", Script: "batValide"),
-        new("Formulaires d'ajout (aperçu seulement)", "Nuisance valide (sous-catégorie)", "Aperçu avec CodeSousCat du parent", Script: "nuisanceValide"),
-        new("Ajout (enregistre vraiment si valide)", "Cité : champs vides", "Erreur : « Libellé » est obligatoire", "~/Home/addElement", "POST", new[] { ("cat", "Cite") }),
-        new("Ajout (enregistre vraiment si valide)", "Rue : cité inexistante", "Erreur : la cité choisie n'existe pas", "~/Home/addElement", "POST", new[] { ("cat", "Rue"), ("LibRue", "Rue de test"), ("Cp", "71000"), ("Ville", "Mâcon"), ("NumCite", "0") }),
-        new("Ajout (enregistre vraiment si valide)", "Catégorie : code déjà utilisé", "Erreur : ce code existe déjà (« Code obligatoire » s'il n'y a aucune catégorie)", "~/Home/addElement", "POST", new[] { ("cat", "Categorie"), ("CodeCat", Model.Categories.FirstOrDefault()?.CodeCat ?? ""), ("LibCat", "Doublon") }),
-        new("Ajout (enregistre vraiment si valide)", "Type d'élément inconnu", "Erreur : type d'élément inconnu", "~/Home/addElement", "POST", new[] { ("cat", "Truc") }),
-        new("Suppression", "Cité inconnue (id 0)", "Erreur : élément introuvable", "~/Home/deleteElement", "POST", new[] { ("cat", "Cite"), ("code", "0") }),
-        new("Suppression", "Identifiant invalide (abc)", "Erreur : identifiant invalide", "~/Home/deleteElement", "POST", new[] { ("cat", "Rue"), ("code", "abc") }),
-        new("Suppression", "Type d'élément inconnu", "Erreur : type d'élément inconnu", "~/Home/deleteElement", "POST", new[] { ("cat", "Truc"), ("code", "1") }),
     };
 }
 
@@ -109,7 +86,6 @@
                     </div>
                 </div>
             </form>
-            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
         </div>
 
         <div class="ligne py-2 border-top">
@@ -140,7 +116,6 @@
                     </div>
                 </div>
             </form>
-            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
         </div>
 
         <div class="ligne py-2 border-top">
@@ -175,7 +150,6 @@
                     </div>
                 </div>
             </form>
-            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
         </div>
 
         <div class="ligne py-2 border-top">
@@ -201,7 +175,6 @@
                     </div>
                 </div>
             </form>
-            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
         </div>
     </div>
 </section>
@@ -234,7 +207,6 @@
                     </div>
                 </div>
             </form>
-            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
         </div>
 
         <div class="ligne py-2 border-top">
@@ -261,7 +233,6 @@
                     </div>
                 </div>
             </form>
-            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
         </div>
 
         <div class="ligne py-2 border-top">
@@ -288,7 +259,6 @@
                     </div>
                 </div>
             </form>
-            <div class="alert alert-success small mt-2 mb-0 apercu" hidden></div>
         </div>
     </div>
 </section>
@@ -319,8 +289,6 @@
         </div>
     </div>
 </div>
-
-<partial name="_ZoneTest" model="casTables" />
 
 <script type="application/json" id="donneesTables">@Html.Raw(Json.Serialize(donnees))</script>
 
@@ -409,7 +377,6 @@
     const parentsDe = f => JSON.parse(f.dataset.parents || '[]');
     const libelleChoisi = select => select.selectedOptions.length ? select.selectedOptions[0].textContent : '';
     const boutonDe = f => document.querySelector('[data-ouvre="' + f.id + '"]');
-    const apercuDe = f => f.closest('.ligne').querySelector('.apercu');
 
     function majFormulaires() {
         majSuppression();
@@ -517,7 +484,6 @@
 
     function ouvrir(f) {
         f.closest('.groupe').querySelectorAll('.form-ajout').forEach(autre => { if (autre !== f) autre.hidden = true; });
-        apercuDe(f).hidden = true;
         f.hidden = false;
         f.querySelector('input:not([type=hidden])')?.focus();
     }
@@ -577,122 +543,9 @@
             e.preventDefault();
             majSecteur();
             if (!f.reportValidity()) return;
-            // Hors zone de test, on enregistre vraiment. La zone de test demande un simple aperçu (data-apercu) : rien n'est écrit en base.
-            if (!f.dataset.apercu) { envoyer(f); return; }
-            delete f.dataset.apercu;
-            // Contenu qui serait envoyé : les parents choisis (clés) + les champs saisis.
-            const contenu = {};
-            for (const p of parentsDe(f)) contenu[p.champ] = $(p.select).value;
-            for (const el of f.querySelectorAll('input[name]')) contenu[el.name] = el.value.trim();
-            const apercu = apercuDe(f);
-            apercu.innerHTML = '';
-            const titre = document.createElement('div');
-            titre.className = 'fw-semibold';
-            titre.textContent = 'Aperçu de l\'ajout : ' + f.dataset.entite + ' (' + f.dataset.nomEntite + ')';
-            const pre = document.createElement('pre');
-            pre.className = 'mb-1 small';
-            pre.textContent = JSON.stringify(contenu, null, 2);
-            const note = document.createElement('div');
-            note.className = 'text-muted';
-            note.textContent = 'Rien n\'est enregistré pour le moment.';
-            apercu.append(titre, pre, note);
-            apercu.hidden = false;
-            f.hidden = true;
-            f.reset(); majSecteur();     // formulaire vidé, prêt pour un autre ajout
+            envoyer(f);
         });
     }
-
-    // ---------- Zone de test (Development uniquement) ----------
-    const choisir = (select, valeur) => { select.value = valeur; select.dispatchEvent(new Event('change', { bubbles: true })); };
-    // Soumet un formulaire en mode aperçu : rien n'est enregistré. Le drapeau est retiré aussitôt (le formulaire peut être invalide et ne rien soumettre).
-    const envoyerEnApercu = f => { f.dataset.apercu = '1'; f.requestSubmit(); delete f.dataset.apercu; };
-    const remplirEtEnvoyer = (f, valeurs) => {
-        ouvrir(f);
-        for (const [nom, valeur] of Object.entries(valeurs)) f.querySelector('[name="' + nom + '"]').value = valeur;
-        envoyerEnApercu(f);
-    };
-    const aucun = message => alert(message);
-    const batimentsDeRue = (cite, rue) => { const adr = new Set(d.batimentRues.filter(br => br.rue === rue).map(br => br.bat)); return d.batiments.filter(b => b.cite === cite && adr.has(b.id)); };
-    const ruesDeCite = cite => [...new Set(d.citeRues.filter(l => l.cite === cite).map(l => l.rue))];
-    const toutVider = () => {
-        choisir(selCite, ''); choisir(selCat, ''); selPc.value = '';
-        formulaires.forEach(f => { f.hidden = true; f.reset(); });
-        document.querySelectorAll('.apercu').forEach(a => a.hidden = true);
-        majSecteur();
-    };
-
-    const cas = {
-        parcoursLieux() {
-            toutVider();
-            const cite = d.cites.find(c => ruesDeCite(c.id).some(r => batimentsDeRue(c.id, r).length));
-            if (!cite) return aucun('Aucune cité n\'a de rue avec bâtiment dans les données.');
-            const rue = ruesDeCite(cite.id).find(r => batimentsDeRue(cite.id, r).length);
-            choisir(selCite, String(cite.id)); choisir(selRue, String(rue)); choisir(selBat, String(batimentsDeRue(cite.id, rue)[0].id));
-        },
-        citeSansRue() {
-            toutVider();
-            const cite = d.cites.find(c => ruesDeCite(c.id).length === 0);
-            if (!cite) return aucun('Toutes les cités ont au moins une rue : aucun cas à montrer avec ces données.');
-            choisir(selCite, String(cite.id));
-        },
-        changerCite() {
-            toutVider();
-            const avec = d.cites.filter(c => ruesDeCite(c.id).length);
-            if (avec.length < 2) return aucun('Il faut au moins deux cités ayant des rues.');
-            choisir(selCite, String(avec[0].id)); choisir(selRue, String(ruesDeCite(avec[0].id)[0]));
-            choisir(selCite, String(avec[1].id));
-        },
-        parcoursTypes() {
-            toutVider();
-            const cat = d.categories.find(c => d.sousCategories.some(s => s.cat === c.code && d.nuisances.some(n => n.sousCat === s.code)));
-            if (!cat) return aucun('Aucune catégorie n\'a de sous-catégorie avec nuisance dans les données.');
-            const sous = d.sousCategories.find(s => s.cat === cat.code && d.nuisances.some(n => n.sousCat === s.code));
-            choisir(selCat, cat.code); choisir(selSousCat, sous.code); choisir(selNuisance, d.nuisances.find(n => n.sousCat === sous.code).code);
-        },
-        catSansSousCat() {
-            toutVider();
-            const cat = d.categories.find(c => !d.sousCategories.some(s => s.cat === c.code));
-            if (!cat) return aucun('Toutes les catégories ont au moins une sous-catégorie : aucun cas à montrer avec ces données.');
-            choisir(selCat, cat.code);
-        },
-        toutVider,
-        rueVide() {
-            toutVider();
-            if (!d.cites.length) return aucun('Aucune cité.');
-            choisir(selCite, String(d.cites[0].id)); ouvrir($('formRue')); envoyerEnApercu($('formRue'));
-        },
-        citeAutre() {
-            toutVider();
-            ouvrir($('formCite')); $('formCite').querySelector('[name=LibCite]').value = 'Cité de test';
-            secteurChoix.value = 'AUTRE'; secteurChoix.dispatchEvent(new Event('change'));
-            secteurAutre.value = 'nord'; secteurAutre.dispatchEvent(new Event('input'));
-            envoyerEnApercu($('formCite'));
-        },
-        rueValide() {
-            toutVider();
-            if (!d.cites.length) return aucun('Aucune cité.');
-            choisir(selCite, String(d.cites[0].id));
-            remplirEtEnvoyer($('formRue'), { LibRue: 'Rue de test', Cp: '71000', Ville: 'Mâcon' });
-        },
-        batValide() {
-            toutVider();
-            const cite = d.cites.find(c => ruesDeCite(c.id).length);
-            if (!cite) return aucun('Aucune cité n\'a de rue.');
-            choisir(selCite, String(cite.id)); choisir(selRue, String(ruesDeCite(cite.id)[0]));
-            remplirEtEnvoyer($('formBat'), { NumBat: 'T1', NumRue: '1', LibBat: 'Bâtiment de test', CodeTranche: '' });
-        },
-        nuisanceValide() {
-            toutVider();
-            const sous = d.sousCategories[0];
-            if (!sous) return aucun('Aucune sous-catégorie.');
-            choisir(selCat, sous.cat); choisir(selSousCat, sous.code);
-            remplirEtEnvoyer($('formNuisance'), { CodeNuisance: 'TEST', LibNuisance: 'Nuisance de test' });
-        }
-    };
-    document.addEventListener('click', e => {
-        const bouton = e.target.closest('[data-test]');
-        if (bouton && cas[bouton.dataset.test]) cas[bouton.dataset.test]();
-    });
 
     majFormulaires();
 })();

@@ -89,35 +89,6 @@
     <div class="card-footer text-muted small">@Model.Count utilisateur@(Model.Count > 1 ? "s" : "")</div>
 </div>
 
-@* ---------- Zone de test TEMPORAIRE (Development uniquement) : voir Views/Shared/_ZoneTest.cshtml ---------- *@
-@{
-    var moi = Model.FirstOrDefault(u => !string.IsNullOrEmpty(emailConnecte) && string.Equals(u.UserEmail, emailConnecte, StringComparison.OrdinalIgnoreCase));
-    var autres = Model.Where(u => u.IdUser != moi?.IdUser && !string.IsNullOrWhiteSpace(u.UserEmail)).ToList();
-    var cible = autres.FirstOrDefault() ?? moi;      // un utilisateur sur lequel essayer les modifications
-    var emailExistant = (cible?.UserEmail ?? emailConnecte) ?? "";
-    var emailUnique = $"test{DateTime.Now:yyyyMMddHHmmss}@test.fr";
-    var idCible = (cible?.IdUser ?? 0).ToString();
-    var idMoi = (moi?.IdUser ?? 0).ToString();
-
-    var casUtilisateurs = new List<CasTest>
-    {
-        new("Ajout", "Champs vides", "Erreur : champs obligatoires", "~/Account/AddAccount", "POST", new[] { ("email", ""), ("role", "") }),
-        new("Ajout", "Droit invalide", "Erreur : rôle invalide", "~/Account/AddAccount", "POST", new[] { ("email", emailUnique), ("role", "X") }),
-        new("Ajout", "E-mail déjà utilisé", "Erreur : e-mail déjà utilisé", "~/Account/AddAccount", "POST", new[] { ("email", emailExistant), ("role", "R") }),
-        new("Ajout", "Ajout valide (crée un utilisateur sans nom)", "Aucune erreur : une ligne est ajoutée, sans nom (il viendra de Microsoft à sa connexion)", "~/Account/AddAccount", "POST", new[] { ("email", emailUnique), ("role", "R") }),
-        new("Modification", "Champs vides", "Erreur : champs obligatoires", "~/Account/EditAccount", "POST", new[] { ("id", idCible), ("name", ""), ("email", ""), ("role", "") }),
-        new("Modification", "Nom vide (le nom est conservé)", "Aucune erreur : le nom existant est gardé", "~/Account/EditAccount", "POST", new[] { ("id", idCible), ("name", ""), ("email", cible?.UserEmail ?? emailUnique), ("role", cible?.Access ?? "R") }),
-        new("Modification", "Droit invalide", "Erreur : rôle invalide", "~/Account/EditAccount", "POST", new[] { ("id", idCible), ("name", "Test"), ("email", cible?.UserEmail ?? emailUnique), ("role", "X") }),
-        new("Modification", "E-mail d'un autre utilisateur", "Erreur : e-mail déjà utilisé (il faut un autre utilisateur)", "~/Account/EditAccount", "POST", new[] { ("id", idMoi), ("name", moi?.NomUser ?? "Test"), ("email", autres.FirstOrDefault()?.UserEmail ?? emailExistant), ("role", moi?.Access ?? "R") }),
-        new("Modification", "Utilisateur inconnu", "Page 404", "~/Account/EditAccount", "POST", new[] { ("id", "0"), ("name", "Test"), ("email", emailUnique), ("role", "R") }),
-        new("Suppression", "Son propre compte", moi == null ? "Votre compte n'est pas dans la liste : page 404" : "Erreur : impossible de supprimer son propre compte", "~/Account/DeleteAccount", "POST", new[] { ("id", idMoi) }),
-        new("Suppression", "Utilisateur inconnu", "Page 404", "~/Account/DeleteAccount", "POST", new[] { ("id", "0") }),
-        new("Accès", "Voir la page « accès refusé »", "Page « accès refusé » (code 403)", "~/Account/AccesRefuse"),
-        new("Accès", "Aller sur AccessDenied", "Redirige vers la page « accès refusé »", "~/Account/AccessDenied"),
-    };
-}
-<partial name="_ZoneTest" model="casUtilisateurs" />
-
 @* ---------- Modal ajout / modification (un seul formulaire, adapté par le script) ---------- *@
 <div class="modal fade" id="utilisateurModal" tabindex="-1" aria-labelledby="utilisateurModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

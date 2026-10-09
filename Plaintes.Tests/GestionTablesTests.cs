@@ -62,18 +62,18 @@ namespace Plaintes.Tests
         [Theory]
         [InlineData(nameof(HomeController.addElement))]
         [InlineData(nameof(HomeController.deleteElement))]
-        public void AjoutEtSuppression_SontReservesAuxAdministrateurs_EnPost_AvecJeton(string action)
+        public void AjoutEtSuppression_SontReservesAuxSuperAdministrateurs_EnPost_AvecJeton(string action)
         {
             var methode = typeof(HomeController).GetMethod(action)!;
 
             Assert.NotNull(methode.GetCustomAttribute<HttpPostAttribute>());
             Assert.NotNull(methode.GetCustomAttribute<ValidateAntiForgeryTokenAttribute>());
-            Assert.Equal("A,S", methode.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
+            Assert.Equal("S", methode.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
         }
 
         [Fact]
-        public void LaPage_EstReserveeAuxAdministrateurs() =>
-            Assert.Equal("A,S", typeof(HomeController).GetMethod(nameof(HomeController.GestionTables))!.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
+        public void LaPage_EstReserveeAuxSuperAdministrateurs() =>
+            Assert.Equal("S", typeof(HomeController).GetMethod(nameof(HomeController.GestionTables))!.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
 
         // ---------- Suppression : cité ----------
 

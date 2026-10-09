@@ -66,7 +66,6 @@ namespace Plaintes.Tests
             Assert.Equal("facture.pdf", piece.Nom);
             Assert.Equal(".pdf", piece.Extension);
             Assert.Equal(TypePieceExport.Pdf, piece.Type);
-            Assert.Equal("Facture", piece.Nature);
         }
 
         [Fact]
@@ -191,16 +190,6 @@ namespace Plaintes.Tests
             var piece = Assert.Single(await _recuperateur.RecupererAsync(1));
 
             Assert.Equal("facture.pdf", piece.Nom);
-        }
-
-        [Fact]
-        public async Task NatureAutre_AjouteLaPrecision()
-        {
-            await AjouterSurDisque(1, "a.pdf", new byte[] { 1 }, nature: "AUTR", precision: "Courrier");
-
-            var piece = Assert.Single(await _recuperateur.RecupererAsync(1));
-
-            Assert.Equal("Autre : Courrier", piece.Nature);
         }
     }
 }

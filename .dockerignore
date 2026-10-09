@@ -28,3 +28,15 @@ README.md
 !.git/config
 !.git/packed-refs
 !.git/refs/heads/**
+
+# Ajouts : ce qui n'a rien à faire dans l'image
+# Certificat et configuration locale (le certificat est monté à l'exécution, jamais embarqué)
+**/*.pfx
+**/appsettings.Development.json
+secrets
+# Journaux locaux
+**/Logs
+# Tests, documentation et scripts SQL
+Plaintes.Tests
+docs
+Scripts

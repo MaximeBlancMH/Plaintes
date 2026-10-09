@@ -1,0 +1,29 @@
+@* Page d'erreur : affichée à la place d'une page quand une erreur imprévue se produit (voir UseExceptionHandler dans Program.cs).
+   Elle est visible sans être connecté, l'erreur peut arriver avant la fin de la connexion. *@
+@{
+    ViewData["Title"] = "Erreur";
+    var idDemande = ViewData["IdDemande"] as string;
+}
+
+<div class="row justify-content-center my-5">
+    <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow-sm text-center erreur-card">
+            <div class="card-body p-4 p-md-5">
+                <div class="erreur-icone mb-3" aria-hidden="true">!</div>
+                <h1 class="h3 mb-3">Une erreur est survenue</h1>
+                <p class="text-muted mb-2">
+                    Votre demande n'a pas pu être traitée. Vous pouvez réessayer dans quelques instants.
+                </p>
+                <p class="text-muted mb-4">
+                    Si le problème persiste, contactez un administrateur de l'application.
+                </p>
+                @* Ce numéro permet de retrouver l'erreur dans les journaux *@
+                @if (!string.IsNullOrWhiteSpace(idDemande))
+                {
+                    <p class="small text-muted mb-4">Numéro à communiquer : <code class="erreur-code">@idDemande</code></p>
+                }
+                <a class="btn btn-mh btn-lg" asp-controller="Dossier" asp-action="Dossiers">Retour à l'accueil</a>
+            </div>
+        </div>
+    </div>
+</div>

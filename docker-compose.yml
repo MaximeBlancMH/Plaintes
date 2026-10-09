@@ -1,0 +1,38 @@
+services:
+  plaintes:
+    image: plaintes:${VERSION:-dev}
+    build:
+      context: .
+      dockerfile: Plaintes/Dockerfile
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Default: "Server=${DB_SERVEUR};Database=${DB_NOM:-PLAINTES};User Id=${DB_UTILISATEUR};Password=${DB_MOT_DE_PASSE};Encrypt=True;TrustServerCertificate=True"
+      Saml__IdpEntityId: ${SAML_IDP_ENTITY_ID}
+      Saml__MetadataUrl: ${SAML_METADATA_URL}
+      Saml__SpEntityId: https://${HOTE_PUBLIC}/saml2
+      Saml__CertificatPath: /run/secrets/saml.pfx
+      AllowedHosts: ${HOTE_PUBLIC};localhost
+    volumes:
+      - pieces:/data/pieces
+      - tmp:/data/tmp
+      - keys:/data/keys
+      - logs:/app/Logs
+      - ./secrets/saml.pfx:/run/secrets/saml.pfx:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 1g
+
+  init-pieces:
+    image: plaintes:${VERSION:-dev}
+    user: root
+    entrypoint: ["sh", "-c"]
+    profiles: ["init"]
+    command: ["touch /data/pieces/.montage_ok && chown -R 1654:1654 /data/pieces"]
+    volumes:
+      - pieces:/data/pieces
+
+volumes:
+  pieces:
+  tmp:
+  keys:
+  logs:

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Data;
@@ -32,44 +32,6 @@ namespace Plaintes.Tests
         }
 
         private static int[] Numeros(PagedResult<Plainte> r) => r.Plaintes.Select(p => p.NumPlainte).ToArray();
-
-        // ---------- getPlaintes ----------
-
-        [Fact]
-        public async Task GetPlaintes_ExclutLesSupprimees_EtTrieParDateCreationDecroissante()
-        {
-            var result = await _srv.getPlaintes();
-
-            Assert.Equal(new[] { 3, 2, 1 }, result.Select(p => p.NumPlainte));
-        }
-
-        [Fact]
-        public async Task GetPlaintes_ExclutLesDetailsSupprimes()
-        {
-            var result = await _srv.getPlaintes();
-
-            var plainte1 = result.Single(p => p.NumPlainte == 1);
-            Assert.Single(plainte1.Composers);
-            Assert.Equal(100, plainte1.Composers.Single().Cout);
-        }
-
-        // ---------- getPlaintesForPage ----------
-
-        [Fact]
-        public async Task GetPlaintesForPage_RenvoieLaPageDemandee()
-        {
-            var page1 = await _srv.getPlaintesForPage(1, 2);
-            var page2 = await _srv.getPlaintesForPage(2, 2);
-
-            Assert.Equal(3, page1.TotalCount);
-            Assert.Equal(2, page1.TotalPages);
-            Assert.Equal(new[] { 3, 2 }, Numeros(page1));
-            Assert.Equal(new[] { 1 }, Numeros(page2));
-            Assert.False(page1.HasPreviousPage);
-            Assert.True(page1.HasNextPage);
-            Assert.True(page2.HasPreviousPage);
-            Assert.False(page2.HasNextPage);
-        }
 
         // ---------- getPlaintesWithFilters : filtres ----------
 
