@@ -4,8 +4,13 @@
 @{
     ViewData["Title"] = "Gestion des utilisateurs";
     var emailConnecte = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+    var droitConnecte = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value?.Trim().ToUpperInvariant();
     var aujourdhui = DateOnly.FromDateTime(DateTime.Today);
     var droits = new[] { "R", "W", "A", "S" };
+    // Droits proposés dans le formulaire : jusqu'au sien seulement (le serveur refuse de toute façon un droit supérieur)
+    var droitsAutorises = droits.Where(d => Array.IndexOf(droits, d) <= Array.IndexOf(droits, droitConnecte)).ToArray();
+    // Sur son propre compte, seul un super administrateur peut changer son e-mail, son droit et sa date de fin
+    var estSuperAdmin = droitConnecte == "S";
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 my-4">
@@ -65,15 +70,18 @@
                             </td>
                             @* Boutons modifier et supprimer *@
                             <td class="text-end text-nowrap">
-                                <button type="button" class="btn btn-sm btn-outline-mh"
+                                @if (Array.IndexOf(droits, u.Access?.Trim().ToUpperInvariant()) <= Array.IndexOf(droits, droitConnecte))
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-mh"
                                         data-bs-toggle="modal" data-bs-target="#utilisateurModal" data-mode="modifier"
                                         data-id="@u.IdUser" data-nom="@u.NomUser" data-email="@u.UserEmail" data-droit="@u.Access?.Trim().ToUpperInvariant()"
-                                        data-datefin="@u.DateFinu?.ToString("yyyy-MM-dd")">Modifier</button>
-                                @* On ne peut pas supprimer son propre compte : le bouton est désactivé. *@
-                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                        data-datefin="@u.DateFinu?.ToString("yyyy-MM-dd")" data-moi="@(estMoi ? "1" : "0")">Modifier</button>
+                                    @* On ne peut pas supprimer son propre compte : le bouton est désactivé. *@
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
                                         data-bs-toggle="modal" data-bs-target="#supprimerUtilisateurModal"
                                         data-id="@u.IdUser" data-nom="@(string.IsNullOrWhiteSpace(u.NomUser) ? u.UserEmail : u.NomUser)"
                                         disabled="@estMoi" title="@(estMoi ? "Vous ne pouvez pas supprimer votre propre compte." : null)">Supprimer</button>
+                                }
                             </td>
                         </tr>
                     }
@@ -101,6 +109,8 @@
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="id" id="utilisateurId" value="" />
                 <div class="modal-body">
+                    @* Message affiché quand un administrateur modifie son propre compte *@
+                    <div class="alert alert-info small py-2" id="noteVerrou" hidden>Seul un super administrateur peut modifier son propre e-mail, son droit et sa date de fin.</div>
                     @* Le nom n'est pas saisi à l'ajout : il vient de Microsoft à la première connexion. Il reste modifiable ensuite. *@
                     <div class="mb-3" id="blocNom" hidden>
                         <label for="utilisateurNom" class="form-label">Nom <span class="text-muted">(facultatif)</span></label>
@@ -114,11 +124,13 @@
                     <div class="mb-3">
                         <label for="utilisateurDroit" class="form-label">Droits</label>
                         <select class="form-select" id="utilisateurDroit" name="role" required>
-                            @foreach (var d in droits)
+                            @foreach (var d in droitsAutorises)
                             {
                                 <option value="@d">@CompteViewModel.LibelleDroit(d)</option>
                             }
                         </select>
+                        @* Une liste désactivée n'est pas envoyée : ce champ caché envoie alors le droit actuel *@
+                        <input type="hidden" name="role" id="utilisateurDroitFixe" disabled />
                     </div>
                     <div class="mb-0">
                         <label for="utilisateurDateFin" class="form-label">Date de fin <span class="text-muted">(facultative)</span></label>
@@ -162,6 +174,7 @@
     <script>
         (function () {
             const $ = id => document.getElementById(id);
+            const SUPER_ADMIN = @(estSuperAdmin ? "true" : "false");
 
             // Le même modal sert à ajouter et à modifier : Bootstrap fournit le bouton cliqué (relatedTarget).
             $('utilisateurModal').addEventListener('show.bs.modal', e => {
@@ -176,6 +189,15 @@
                 $('utilisateurEmail').value = modifier ? b.dataset.email : '';
                 $('utilisateurDroit').value = modifier && b.dataset.droit ? b.dataset.droit : 'R';
                 $('utilisateurDateFin').value = modifier ? b.dataset.datefin : '';
+
+                // Sur son propre compte, un administrateur qui n'est pas super administrateur ne change que son nom
+                const verrou = modifier && b.dataset.moi === '1' && !SUPER_ADMIN;
+                $('noteVerrou').hidden = !verrou;
+                $('utilisateurEmail').readOnly = verrou;
+                $('utilisateurDateFin').readOnly = verrou;
+                $('utilisateurDroit').disabled = verrou;
+                $('utilisateurDroitFixe').disabled = !verrou;
+                $('utilisateurDroitFixe').value = $('utilisateurDroit').value;
             });
 
             // Fenêtre de suppression : on récupère l'id et le nom de l'utilisateur

@@ -463,24 +463,6 @@ body > .container {
 .stat-legende-nom { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stat-legende-valeur { font-weight: 600; }
 
-.stat-svg-jauge { display: block; width: 100%; max-width: 280px; margin: 0 auto; }
-
-.stat-jauge-fond,
-.stat-jauge-valeur {
-  fill: none;
-  stroke-width: 20;
-  stroke-linecap: round;
-}
-
-.stat-jauge-fond { stroke: #e3e8ec; }
-
-.stat-jauge-valeur {
-  stroke: var(--mh-green);
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-  animation: stat-jauge 1.2s ease-out both;
-}
-
 .stat-treemap { position: relative; width: 100%; }
 
 .stat-tuile {
@@ -515,9 +497,318 @@ body > .container {
 .stat-point-radar { fill: var(--mh-green-dark); stroke: #fff; stroke-width: 2; cursor: pointer; }
 
 @keyframes stat-tracer { to { stroke-dashoffset: 0; } }
-@keyframes stat-jauge { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes stat-apparaitre { from { opacity: 0; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .stat-trait, .stat-aire, .stat-part, .stat-tuile, .stat-radar, .stat-jauge-valeur { animation: none; stroke-dashoffset: 0; }
+  .stat-trait, .stat-aire, .stat-part, .stat-tuile, .stat-radar, .stat-barre { animation: none; stroke-dashoffset: 0; }
 }
+
+/* Modal de téléchargement : un document dont les lignes s'écrivent les unes après les autres. */
+.doc-anim {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 96px;
+  height: 122px;
+  margin: 0 auto;
+  padding: 22px 14px 0;
+  border-radius: 6px;
+  /* coin supérieur droit coupé, l'ombre suit la forme grâce à drop-shadow */
+  background: linear-gradient(225deg, transparent 15px, #fff 15px);
+  filter: drop-shadow(0 6px 14px rgba(45, 80, 104, .25));
+}
+
+/* Coin plié */
+.doc-anim::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 21px;
+  height: 21px;
+  border-bottom-left-radius: 4px;
+  background: linear-gradient(225deg, transparent 50%, #c9d6df 50%);
+}
+
+.doc-anim-titre,
+.doc-anim-ligne {
+  display: block;
+  border-radius: 3px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: doc-ecrire 4.2s ease-in-out infinite;
+}
+
+.doc-anim-titre {
+  width: 55%;
+  height: 8px;
+  margin-bottom: 3px;
+  background-color: var(--mh-green);
+}
+
+.doc-anim-ligne {
+  height: 5px;
+  background-color: #c4d0d9;
+}
+
+/* Longueurs différentes, et chaque ligne commence un peu après la précédente */
+.doc-anim-ligne:nth-child(2) { width: 92%; animation-delay: .35s; }
+.doc-anim-ligne:nth-child(3) { width: 78%; animation-delay: .7s; }
+.doc-anim-ligne:nth-child(4) { width: 88%; animation-delay: 1.05s; }
+.doc-anim-ligne:nth-child(5) { width: 64%; animation-delay: 1.4s; }
+.doc-anim-ligne:nth-child(6) { width: 84%; animation-delay: 1.75s; }
+.doc-anim-ligne:nth-child(7) { width: 46%; animation-delay: 2.1s; }
+
+/* La ligne s'écrit de gauche à droite, reste affichée, puis s'efface avant de recommencer */
+@keyframes doc-ecrire {
+  0% { transform: scaleX(0); opacity: 1; }
+  12% { transform: scaleX(1); }
+  80% { transform: scaleX(1); opacity: 1; }
+  92%, 100% { transform: scaleX(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-anim-titre, .doc-anim-ligne { animation: none; transform: none; }
+}
+
+/* Statistiques : filtres, pastilles, éléments cliquables, calendrier et barres. */
+.stat-filtres .form-label {
+  margin-bottom: .2rem;
+  font-size: .75rem;
+  color: #6c757d;
+}
+
+.stat-filtres .stat-filtre-actif {
+  border-color: var(--mh-green);
+  box-shadow: 0 0 0 .15rem rgba(120, 190, 32, .25);
+}
+
+.stat-pastille {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .2rem .65rem;
+  border: 0;
+  border-radius: 999px;
+  font-size: .8rem;
+  color: #fff;
+  background-color: var(--mh-blue);
+  transition: background-color .15s;
+}
+
+.stat-pastille span {
+  font-size: 1rem;
+  line-height: 1;
+  opacity: .8;
+}
+
+.stat-pastille:hover { background-color: #d9534f; }
+
+.btn-outline-mh.active {
+  color: #fff;
+  background-color: var(--mh-blue);
+  border-color: var(--mh-blue);
+}
+
+#statContenu { transition: opacity .15s; }
+
+.stat-chargement {
+  opacity: .45;
+  pointer-events: none;
+}
+
+.stat-cliquable { cursor: pointer; }
+
+.stat-part.selectionne {
+  stroke: var(--mh-blue-dark);
+  stroke-width: 3;
+}
+
+.stat-legende li.selectionne { font-weight: 700; }
+
+.stat-tuile.selectionne {
+  outline: 3px solid var(--mh-blue-dark);
+  outline-offset: -3px;
+}
+
+.stat-axe.selectionne {
+  font-weight: 700;
+  fill: var(--mh-blue-dark);
+}
+
+.stat-calendrier {
+  display: grid;
+  grid-template-columns: 3rem repeat(12, minmax(0, 1fr));
+  gap: 4px;
+  font-size: .75rem;
+}
+
+.stat-cal-mois {
+  text-align: center;
+  color: #6c757d;
+}
+
+.stat-cal-annee {
+  align-self: center;
+  font-weight: 600;
+  color: var(--mh-blue);
+}
+
+.stat-cal-case {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.9rem;
+  border-radius: .3rem;
+  font-weight: 600;
+  color: #fff;
+  background-color: #eef2f5;
+  transition: transform .1s;
+}
+
+.stat-cal-case:hover { transform: scale(1.08); }
+
+.stat-cal-annee.selectionne,
+.stat-cal-case.selectionne { box-shadow: 0 0 0 2px var(--mh-blue-dark); }
+
+.stat-cal-annee.selectionne { box-shadow: none; text-decoration: underline; }
+
+.stat-ligne {
+  display: grid;
+  grid-template-columns: minmax(90px, 40%) 1fr auto;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: .6rem;
+  padding: .1rem .25rem;
+  border-radius: .3rem;
+  font-size: .9rem;
+}
+
+.stat-ligne.selectionne { background-color: #eef3f6; font-weight: 700; }
+.stat-ligne-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.stat-piste {
+  height: .7rem;
+  border-radius: .35rem;
+  background-color: #e9eef2;
+  overflow: hidden;
+}
+
+.stat-barre {
+  height: 100%;
+  border-radius: .35rem;
+  animation: stat-apparaitre .6s ease-out both;
+}
+
+.stat-ligne-valeur {
+  min-width: 2.5rem;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* Page Dossiers : la page suit la largeur de l'écran jusqu'à 1600 px ; la poignée du tableau permet d'aller au-delà (variable --largeur-dossiers). */
+.conteneur-dossiers {
+  max-width: var(--largeur-dossiers, 1600px);
+}
+
+.poignee-largeur { display: none; }
+
+@media (min-width: 992px) {
+  .carte-tableau { position: relative; }
+
+  .poignee-largeur {
+    display: block;
+    position: absolute;
+    top: 50%;
+    right: -7px;
+    z-index: 5;
+    width: 12px;
+    height: 64px;
+    border-radius: 6px;
+    background-color: var(--mh-blue);
+    opacity: .35;
+    cursor: ew-resize;
+    touch-action: none;
+    transform: translateY(-50%);
+    transition: opacity .15s;
+  }
+
+  /* Deux traits verticaux pour signaler qu'on peut saisir la poignée */
+  .poignee-largeur::before {
+    content: "";
+    position: absolute;
+    inset: 16px 3px;
+    border-left: 2px solid rgba(255, 255, 255, .8);
+    border-right: 2px solid rgba(255, 255, 255, .8);
+  }
+
+  .poignee-largeur:hover,
+  .poignee-largeur.active { opacity: .9; }
+}
+
+body.redimensionnement {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+/* Tableau des dossiers : on fait glisser le trait vertical entre deux colonnes pour changer leur largeur (sans poignée visible) */
+#tableDossiers thead th.colonne-fixee {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tableDossiers.redim-survol,
+#tableDossiers.redim-survol * { cursor: col-resize !important; }
+
+body.redim-colonnes,
+body.redim-colonnes * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+/* Bouton « Rétablir les largeurs » du bloc Colonnes (page Dossiers) */
+.bouton-largeurs {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+}
+
+.bouton-largeurs:not(:disabled):hover {
+  color: #fff;
+  background-color: var(--mh-blue);
+  border-color: var(--mh-blue);
+}
+
+/* Statistiques : grille des graphiques. Elle met autant de colonnes que la largeur le permet (330 px minimum chacune),
+   et comble les trous quand des graphiques sont masqués par les filtres. Les grands graphiques prennent deux colonnes sur grand écran. */
+.stat-cartes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
+  grid-auto-flow: dense;
+  gap: 1.5rem;
+}
+
+@media (min-width: 992px) {
+  .stat-bloc-large { grid-column: span 2; }
+}
+
+/* Carte des cités : dans une case trop petite, on n'affiche que le nombre (le nom apparaît au survol) */
+.stat-tuile-petite { padding: .25rem .35rem; }
+.stat-tuile-petite .stat-tuile-nom { display: none; }
+.stat-tuile-petite .stat-tuile-valeur { font-size: .85rem; }
+
+/* Curseur à deux poignées (pages Dossiers et Statistiques) : deux <input type="range"> superposés ; seuls les ronds réagissent à la souris. */
+.range-double { position: relative; height: 1.5rem; }
+.range-double .piste, .range-double .piste-active { position: absolute; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; }
+.range-double .piste { left: 0; right: 0; background: #dee2e6; }
+.range-double .piste-active { background: var(--bs-success, #198754); }
+.range-double input[type=range] { position: absolute; left: 0; width: 100%; top: 0; height: 100%; margin: 0;
+  background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.range-double input[type=range]::-webkit-slider-runnable-track { background: transparent; }
+.range-double input[type=range]::-moz-range-track { background: transparent; }
+.range-double input[type=range]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; appearance: none;
+  width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #fff; border: 2px solid var(--bs-success, #198754); cursor: grab; }
+.range-double input[type=range]::-moz-range-thumb { pointer-events: auto; width: 1.1rem; height: 1.1rem; border-radius: 50%;
+  background: #fff; border: 2px solid var(--bs-success, #198754); cursor: grab; }

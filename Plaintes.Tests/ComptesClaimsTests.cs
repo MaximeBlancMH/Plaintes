@@ -20,15 +20,25 @@ namespace Plaintes.Tests
         public void EstActif_UtilisateurInconnu_NEstPasActif() =>
             Assert.False(ComptesClaims.EstActif(null));
 
+        // Le compte reste actif jusqu'à sa date de fin incluse ; il est refusé dès le lendemain.
         [Theory]
-        [InlineData(-30)]   // date de fin passée
-        [InlineData(0)]     // date du jour
-        [InlineData(30)]    // même une date future : dès qu'elle est renseignée, l'utilisateur est supprimé
-        public void EstActif_DateDeFinRenseignee_NEstPasActif(int jours)
+        [InlineData(-1)]    // hier : c'est la date que met la suppression d'un utilisateur
+        [InlineData(-30)]   // date de fin passée depuis longtemps
+        public void EstActif_DateDeFinPassee_NEstPasActif(int jours)
         {
             var user = new Utilisateur { IdUser = 1, DateFinu = DateOnly.FromDateTime(DateTime.Today.AddDays(jours)) };
 
             Assert.False(ComptesClaims.EstActif(user));
+        }
+
+        [Theory]
+        [InlineData(0)]     // date du jour : dernier jour d'accès
+        [InlineData(30)]    // date future : accès jusqu'à cette date
+        public void EstActif_DateDeFinAujourdhuiOuFuture_EstActif(int jours)
+        {
+            var user = new Utilisateur { IdUser = 1, DateFinu = DateOnly.FromDateTime(DateTime.Today.AddDays(jours)) };
+
+            Assert.True(ComptesClaims.EstActif(user));
         }
 
         // ---------- Politique par défaut ----------
@@ -155,6 +165,22 @@ namespace Plaintes.Tests
             // ... puis elle est rejetée dès que la mémoire est vidée (au bout de DureeVerificationSession)
             cache.Clear();
             Assert.False(await ComptesClaims.SessionEstValideAsync(Session("a@test.fr"), db, cache));
+        }
+
+        [Fact]
+        public async Task OublierSession_FaitRelireLeDroitEnBaseTouteDeSuite()
+        {
+            using var db = TestDb.Creer();
+            db.Utilisateurs.Add(new Utilisateur { IdUser = 1, UserEmail = "a@test.fr", Access = "S" });
+            await db.SaveChangesAsync();
+            var cache = NouveauCache();
+            Assert.Equal("S", (await ComptesClaims.EtatSessionAsync(Session("a@test.fr"), db, cache)).Droit);
+
+            (await db.Utilisateurs.FindAsync(1))!.Access = "A";
+            await db.SaveChangesAsync();
+            ComptesClaims.OublierSession(cache, " A@test.fr ");     // casse et espaces sans importance
+
+            Assert.Equal("A", (await ComptesClaims.EtatSessionAsync(Session("a@test.fr"), db, cache)).Droit);
         }
 
         // ---------- EtatSessionAsync (droit mis à jour sans reconnexion) ----------

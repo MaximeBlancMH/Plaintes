@@ -47,7 +47,7 @@ namespace Plaintes.Services
         /// <param name="newEmail">Nouvel email de l'utilisateur</param>
         /// <param name="newRole">Nouveaux droits de l'utilisateur</param>
         /// <returns></returns>
-        public async Task UpdateUser(int idUser, string? newName, string newEmail, string newRole)
+        public async Task UpdateUser(int idUser, string? newName, string newEmail, string newRole, DateOnly? newDateFin)
         {
             var user = await _context.Utilisateurs.FindAsync(idUser);
             if (user == null)
@@ -58,6 +58,7 @@ namespace Plaintes.Services
             user.NomUser = newName;
             user.UserEmail = newEmail;
             user.Access = newRole;
+            user.DateFinu = newDateFin;
             await _context.SaveChangesAsync();
         }
 
@@ -104,12 +105,13 @@ namespace Plaintes.Services
         /// <param name="email">Email du nouvel utilisateur</param>
         /// <param name="role">Droits du nouvel utilisateur</param>
         /// <returns></returns>
-        public async Task AddUser(string email, string role)
+        public async Task AddUser(string email, string role, DateOnly? dateFin = null)
         {
             var user = new Utilisateur
             {
                 UserEmail = email,
                 Access = role,
+                DateFinu = dateFin,
             };
 
             _context.Utilisateurs.Add(user);

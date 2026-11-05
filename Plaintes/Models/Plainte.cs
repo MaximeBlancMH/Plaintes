@@ -68,8 +68,12 @@ public class PlainteFiltres
     public string? categorie { get; set; }
     public string? sousCategorie { get; set; }
     public string? nuisance { get; set; }
+    public string? commentaire { get; set; }
     public int? coutMin { get; set; }
     public int? coutMax { get; set; }
+    // Période sur la date de début des faits : premier et dernier mois « aaaa-mm » (vide = sans limite de ce côté)
+    public string? debut { get; set; }
+    public string? fin { get; set; }
     // Tri : nom de la colonne (numplainte, cite, rue, partiecommune, reclamation, cout, categorie, datecreation, datedeb) et sens ("asc" ou "desc").
     public string? tri { get; set; }
     public string? sens { get; set; }

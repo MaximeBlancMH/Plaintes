@@ -33,6 +33,66 @@ namespace Plaintes.Tests
 
         private static int[] Numeros(PagedResult<Plainte> r) => r.Plaintes.Select(p => p.NumPlainte).ToArray();
 
+        // ---------- getPlaintesWithFilters : période (date de début des faits) ----------
+
+        /// <summary>Dates de début : dossier 1 en janvier 2025, 2 en mars 2025, 3 en juin 2026</summary>
+        private async Task DatesDeDebut()
+        {
+            (await _ctx.Plaintes.FindAsync(1))!.DateDeb = new DateOnly(2025, 1, 10);
+            (await _ctx.Plaintes.FindAsync(2))!.DateDeb = new DateOnly(2025, 3, 31);
+            (await _ctx.Plaintes.FindAsync(3))!.DateDeb = new DateOnly(2026, 6, 1);
+            await _ctx.SaveChangesAsync();
+            _ctx.ChangeTracker.Clear();
+        }
+
+        [Fact]
+        public async Task Periode_GardeLesMoisChoisis_DuPremierAuDernierJour()
+        {
+            await DatesDeDebut();
+
+            var result = await _srv.getPlaintesWithFilters(new PlainteFiltres { debut = "2025-03", fin = "2025-03" }, null!, "asc", 1, 10);
+
+            Assert.Equal(new[] { 2 }, Numeros(result));          // le 31 mars est bien dans « mars »
+        }
+
+        [Fact]
+        public async Task Periode_UnSeulCote_EstAccepte()
+        {
+            await DatesDeDebut();
+
+            var depuis = await _srv.getPlaintesWithFilters(new PlainteFiltres { debut = "2025-02" }, "numplainte", "asc", 1, 10);
+            var jusqua = await _srv.getPlaintesWithFilters(new PlainteFiltres { fin = "2025-02" }, "numplainte", "asc", 1, 10);
+
+            Assert.Equal(new[] { 2, 3 }, Numeros(depuis));
+            Assert.Equal(new[] { 1 }, Numeros(jusqua));
+        }
+
+        [Fact]
+        public async Task Periode_Invalide_EstIgnoree()
+        {
+            await DatesDeDebut();
+
+            var result = await _srv.getPlaintesWithFilters(new PlainteFiltres { debut = "abc", fin = "2025-13" }, "numplainte", "asc", 1, 10);
+
+            Assert.Equal(new[] { 1, 2, 3 }, Numeros(result));
+        }
+
+        [Fact]
+        public async Task Periode_LesBornesSuiventLesAutresFiltres_MaisPasLaPeriode()
+        {
+            await DatesDeDebut();
+
+            var tous = await _srv.getPlaintesWithFilters(new PlainteFiltres { debut = "2025-03", fin = "2025-03" }, null!, "asc", 1, 10);
+            var lesPins = await _srv.getPlaintesWithFilters(new PlainteFiltres { cite = "Pins" }, null!, "asc", 1, 10);
+
+            // La période choisie ne resserre pas le curseur...
+            Assert.Equal((new DateOnly(2025, 1, 10), new DateOnly(2026, 6, 1)), (tous.PeriodeMin, tous.PeriodeMax));
+            // ...mais les autres filtres oui (« Les Pins » : dossiers 1 et 3)
+            Assert.Equal((new DateOnly(2025, 1, 10), new DateOnly(2026, 6, 1)), (lesPins.PeriodeMin, lesPins.PeriodeMax));
+            var chenes = await _srv.getPlaintesWithFilters(new PlainteFiltres { cite = "Chênes" }, null!, "asc", 1, 10);
+            Assert.Equal((new DateOnly(2025, 3, 31), new DateOnly(2025, 3, 31)), (chenes.PeriodeMin, chenes.PeriodeMax));
+        }
+
         // ---------- getPlaintesWithFilters : filtres ----------
 
         [Fact]
@@ -504,6 +564,67 @@ namespace Plaintes.Tests
             Assert.Equal("Cave", p.CodePartieCommuneNavigation.LibPartieCommune);
             Assert.Equal("Odeur", p.CodeCatNavigation.LibCat);
             Assert.Equal("Poubelles", p.Composers.Single().CodeNuisanceNavigation.CodeSousCatNavigation.LibSousCat);
+        }
+
+        // ---------- GetPlaintesPourExport (export Excel) ----------
+
+        [Fact]
+        public async Task Export_RenvoieToutesLesPlaintesFiltreesEtTriees_SansPagination()
+        {
+            var toutes = await _srv.GetPlaintesPourExport(new PlainteFiltres(), "numplainte", "desc");
+            var lesPins = await _srv.GetPlaintesPourExport(new PlainteFiltres { cite = "Pins" }, "numplainte", "asc");
+
+            Assert.Equal(new[] { 3, 2, 1 }, toutes.Plaintes.Select(p => p.NumPlainte));     // la plainte supprimée n'y est pas
+            Assert.Equal(new[] { 1, 3 }, lesPins.Plaintes.Select(p => p.NumPlainte));
+        }
+
+        [Fact]
+        public async Task Export_AppliqueLaPeriode_CommeLaPage()
+        {
+            await DatesDeDebut();
+
+            var export = await _srv.GetPlaintesPourExport(new PlainteFiltres { debut = "2025-03", fin = "2025-03" }, "numplainte", "asc");
+
+            Assert.Equal(new[] { 2 }, export.Plaintes.Select(p => p.NumPlainte));
+        }
+
+        [Fact]
+        public async Task Export_CompteLesPiecesJointesNonSupprimees_EtChargeLesRelations()
+        {
+            _ctx.AddRange(
+                new PieceJointe { NumPiece = 1, NumPlainte = 1, TypePiece = "pdf", TaillePiece = "1" },
+                new PieceJointe { NumPiece = 2, NumPlainte = 1, TypePiece = "pdf", TaillePiece = "1", SupprPj = true });
+            await _ctx.SaveChangesAsync();
+            _ctx.ChangeTracker.Clear();
+
+            var export = await _srv.GetPlaintesPourExport(new PlainteFiltres(), "numplainte", "asc");
+
+            Assert.Equal(1, export.NbPieces[1]);
+            Assert.Equal(0, export.NbPieces[2]);
+            var p1 = export.Plaintes.First();
+            Assert.Equal("Ouvert", p1.CodEtatNavigation.LibEtat);
+            Assert.Equal(new int?[] { 100 }, p1.Composers.Select(c => c.Cout));          // le détail supprimé n'y est pas
+            Assert.Equal("Voisinage", p1.Composers.Single().CodeNuisanceNavigation.CodeSousCatNavigation.LibSousCat);
+        }
+
+        [Fact]
+        public async Task Export_RappelleLesFiltresEtLeTriEnClair()
+        {
+            var filtres = new PlainteFiltres { cite = "Pins", categorie = "C2", nuisance = "N2", coutMin = 100, debut = "2025-03" };
+
+            var export = await _srv.GetPlaintesPourExport(filtres, "cout", "asc");
+            var sansFiltre = await _srv.GetPlaintesPourExport(new PlainteFiltres(), null!, "desc");
+
+            Assert.Equal(new[]
+            {
+                new FiltreExport("Cité (contient)", "Pins"),
+                new FiltreExport("Catégorie", "Odeur"),
+                new FiltreExport("Nuisance", "Déchets"),
+                new FiltreExport("Coût d'un détail, au moins", "100 €"),
+                new FiltreExport("Début des faits, à partir de", "mars 2025"),
+                new FiltreExport("Tri", "Coût (croissant)")
+            }, export.Filtres);
+            Assert.Empty(sansFiltre.Filtres);
         }
     }
 }

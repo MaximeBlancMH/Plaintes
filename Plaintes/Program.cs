@@ -27,6 +27,7 @@ builder.Services.AddMemoryCache();      // utilisée pour vérifier les sessions
 builder.Services.AddScoped<IUtilisateurSrv, UtilisateurSrv>();
 builder.Services.AddScoped<IPlainteSrv, PlainteSrv>();
 builder.Services.AddScoped<IStatistiquesSrv, StatistiquesSrv>();
+builder.Services.AddHostedService<PurgePlaintesService>();     // chaque nuit à minuit : suppression logique des plaintes de 5 ans ou plus
 // MultipartBodyLengthLimit s'applique à chaque fichier d'un envoi : on le règle sur Storage:MaxSize (plus une marge), la taille totale
 // est relevée pour la création et la modification par LimiteEnvoiPiecesFilter.
 builder.Services.AddOptions<FormOptions>().Configure<IOptions<StorageSettings>>((o, s) => o.MultipartBodyLengthLimit = s.Value.MaxSize + 1024 * 1024);
@@ -56,6 +57,7 @@ builder.Services.AddSingleton<IConvertisseurPdf, LibreOfficeConvertisseurPdf>();
 builder.Services.AddScoped<IRecuperateurPieces, RecuperateurPieces>();
 builder.Services.AddScoped<IAssembleurPdf, PdfSharpAssembleur>();
 builder.Services.AddScoped<IExportPlainteSrv, ExportPlainteSrv>();
+builder.Services.AddSingleton<IExportExcelSrv, ExportExcelSrv>();     // exports Excel des pages Dossiers et Statistiques
 
 builder.Services.AddAuthentication(opt =>
 {
@@ -123,10 +125,10 @@ builder.Services.AddAuthentication(opt =>
             logger.LogInformation("Connexion de {Nomuser}", user.NomUser);
         }
 
-        // On conserve le claim SAML nécessaire à la déconnexion Microsoft. On ne garde volontairement PAS l'index de session :
-        // le cookie de l'application vit plus longtemps que la session Microsoft, et un index périmé fait échouer la déconnexion
-        // (AADSTS50070). Sans index, Microsoft ferme la session en cours quelle qu'elle soit.
-        foreach (var c in ctx.Principal!.Claims.Where(c => c.Type == Saml2ClaimTypes.LogoutNameIdentifier))
+        // On conserve les claims SAML nécessaires à la déconnexion Microsoft. Les deux sont obligatoires : sans l'index de session,
+        // Sustainsys n'envoie pas la demande de déconnexion à Microsoft (« Federated logout not possible ») et ne ferme que la session locale.
+        foreach (var c in ctx.Principal!.Claims.Where(c =>
+                     c.Type == Saml2ClaimTypes.LogoutNameIdentifier || c.Type == Saml2ClaimTypes.SessionIndex))
             identity.AddClaim(c);
 
         ctx.Principal = new ClaimsPrincipal(identity);

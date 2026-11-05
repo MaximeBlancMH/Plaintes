@@ -43,8 +43,15 @@ namespace Plaintes.Tests
             public string? Sens { get; private set; }
             public int Page { get; private set; }
             public int PageSize { get; private set; }
+            public DossiersExport Export { get; set; } = new(new(), new(), new());
 
-
+            public Task<DossiersExport> GetPlaintesPourExport(PlainteFiltres filtres, string tri, string sens)
+            {
+                Filtres = filtres;
+                Tri = tri;
+                Sens = sens;
+                return Task.FromResult(Export);
+            }
 
             public Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize)
             {
@@ -84,6 +91,21 @@ namespace Plaintes.Tests
 
             Assert.Equal(attendu, _srv.PageSize);
             Assert.Equal(3, _srv.Page);
+        }
+
+        [Fact]
+        public async Task ExportExcel_TransmetFiltresEtTri_EtRenvoieUnFichierXlsx()
+        {
+            var filtres = new PlainteFiltres { cite = "Pins" };
+
+            var resultat = await _controller.ExportExcel(filtres, "rue", "desc", new Plaintes.Services.Export.ExportExcelSrv());
+
+            Assert.Same(filtres, _srv.Filtres);
+            Assert.Equal(("rue", "desc"), (_srv.Tri, _srv.Sens));
+            var fichier = Assert.IsType<FileContentResult>(resultat);
+            Assert.Equal("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fichier.ContentType);
+            Assert.Matches(@"^Dossiers_\d{4}-\d{2}-\d{2}\.xlsx$", fichier.FileDownloadName);
+            Assert.NotEmpty(fichier.FileContents);
         }
 
         [Fact]

@@ -6,6 +6,7 @@ namespace Plaintes.Services.IServices
     public interface IPlainteSrv
     {
         Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize);
+        Task<DossiersExport> GetPlaintesPourExport(PlainteFiltres filtres, string tri, string sens);
         Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs);
         Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte);
         Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail);

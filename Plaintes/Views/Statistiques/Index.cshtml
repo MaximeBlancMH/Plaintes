@@ -1,130 +1,108 @@
-@model StatistiquesViewModel
+@* Page « Statistiques » : filtres croisés et graphiques cliquables.
+   Le serveur envoie les chiffres de départ ; quand on change un filtre (ou qu'on clique sur un graphique), js/statistiques.js
+   redemande les chiffres à /Statistiques/Donnees et redessine tout, sans recharger la page. L'adresse garde les filtres choisis. *@
+@model StatistiquesPageViewModel
 @{
     ViewData["Title"] = "Statistiques";
-    var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
-    var periode = Model.Annee.HasValue ? $"en {Model.Annee}" : "sur toutes les années";
 }
 
-@* Titre et choix de la période *@
+@* Titre et réinitialisation *@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 my-4">
     <h1 class="h3 mb-0 titre-mh">Statistiques</h1>
-    <form method="get" class="d-flex align-items-center gap-2 m-0">
-        <label for="annee" class="form-label mb-0 text-muted">Période</label>
-        <select id="annee" name="annee" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
-            <option value="" selected="@(!Model.Annee.HasValue)">Toutes les années</option>
-            @foreach (var a in Model.Annees)
-            {
-                <option value="@a" selected="@(Model.Annee == a)">@a</option>
-            }
-        </select>
-    </form>
+    <div class="d-flex gap-2">
+        @* Export Excel : le script met à jour l'adresse du lien à chaque changement de filtre *@
+        <a class="btn btn-sm btn-outline-mh" id="statExport" data-url="@Url.Action("ExportExcel", "Statistiques")"
+           href="@Url.Action("ExportExcel", "Statistiques")@Context.Request.QueryString" title="Télécharge en Excel les statistiques avec ces filtres">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+            </svg>
+            Exporter en Excel
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-mh" id="statReinitialiser">Réinitialiser les filtres</button>
+    </div>
 </div>
 
-@if (Model.Total == 0)
-{
-    <div class="card shadow-sm card-mh">
-        <div class="card-body text-center text-muted py-5">Aucun dossier @periode.</div>
-    </div>
-}
-else
-{
-    @* Chiffres clés *@
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-lg-3">
-            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
-                <div class="stat-chiffre">@Model.Total.ToString("N0", fr)</div>
-                <div class="stat-libelle">Dossiers @periode</div>
-            </div></div>
-        </div>
-        <div class="col-6 col-lg-3">
-            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
-                <div class="stat-chiffre">@Model.EnCours.ToString("N0", fr)</div>
-                <div class="stat-libelle">Dossiers en cours</div>
-            </div></div>
-        </div>
-        <div class="col-6 col-lg-3">
-            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
-                <div class="stat-chiffre">@Model.CoutTotal.ToString("N0", fr)&nbsp;€</div>
-                <div class="stat-libelle">Coût total</div>
-            </div></div>
-        </div>
-        <div class="col-6 col-lg-3">
-            <div class="card shadow-sm stat-carte h-100"><div class="card-body">
-                <div class="stat-chiffre">@Model.CoutMoyen.ToString("N0", fr)&nbsp;€</div>
-                <div class="stat-libelle">Coût moyen par dossier</div>
-            </div></div>
+<div id="statistiques" data-url="@Url.Content("~/Statistiques/Donnees")">
+
+    @* Filtres : chaque liste dépend de la précédente (secteur -> cité, catégorie -> sous-catégorie -> nuisance) *@
+    <div class="card shadow-sm card-mh mb-3 stat-filtres">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-6 col-md-3"><label for="fSecteur" class="form-label">Secteur</label><select id="fSecteur" class="form-select form-select-sm" data-cle="secteur"></select></div>
+                <div class="col-6 col-md-3"><label for="fCite" class="form-label">Cité</label><select id="fCite" class="form-select form-select-sm" data-cle="cite"></select></div>
+                <div class="col-6 col-md-3"><label for="fPartieCommune" class="form-label">Partie commune</label><select id="fPartieCommune" class="form-select form-select-sm" data-cle="partieCommune"></select></div>
+                <div class="col-6 col-md-3"><label for="fCategorie" class="form-label">Catégorie</label><select id="fCategorie" class="form-select form-select-sm" data-cle="categorie"></select></div>
+                <div class="col-6 col-md-3"><label for="fSousCategorie" class="form-label">Sous-catégorie</label><select id="fSousCategorie" class="form-select form-select-sm" data-cle="sousCategorie"></select></div>
+                <div class="col-6 col-md-3"><label for="fNuisance" class="form-label">Nuisance</label><select id="fNuisance" class="form-select form-select-sm" data-cle="nuisance"></select></div>
+            </div>
+            @* Période (date de début des faits) : deux poignées, mois par mois, entre le premier et le dernier mois des dossiers
+               qui répondent aux autres filtres. Les bornes se resserrent quand les autres filtres réduisent la période couverte. *@
+            <div class="mt-3" id="blocPeriode">
+                <div class="d-flex justify-content-between align-items-baseline">
+                    <span class="form-label mb-1">Période <span class="text-muted">(début des faits)</span></span>
+                    <span class="small fw-semibold" id="periodeTexte"></span>
+                </div>
+                <div class="range-double">
+                    <div class="piste"></div>
+                    <div class="piste-active" id="periodePiste"></div>
+                    <input type="range" id="periodeDebut" min="0" max="0" step="1" value="0" aria-label="Premier mois de la période" />
+                    <input type="range" id="periodeFin" min="0" max="0" step="1" value="0" aria-label="Dernier mois de la période" />
+                </div>
+                <div class="d-flex justify-content-between text-muted small"><span id="periodeMin"></span><span id="periodeMax"></span></div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2 mt-3" id="filtresActifs"></div>
         </div>
     </div>
 
-    @* Évolution : courbe par mois pour une année (comparée à l'année d'avant), par année sinon *@
-    <div class="card shadow-sm card-mh mb-4">
-        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <span class="h6 mb-0">Évolution @(Model.Annee.HasValue ? "mensuelle" : "annuelle")</span>
-            <div class="stat-legende-courbe">
-                <span><i></i>@(Model.Annee?.ToString() ?? "Dossiers")</span>
-                @if (Model.Annee.HasValue)
-                {
-                    <span><i class="prec"></i>@(Model.Annee - 1)</span>
-                }
-            </div>
-        </div>
-        <div class="card-body"><div id="grapheEvolution"></div></div>
+    @* Message quand aucun dossier ne correspond aux filtres *@
+    <div class="card shadow-sm card-mh mb-4" id="statVide" hidden>
+        <div class="card-body text-center text-muted py-5">Aucun dossier ne correspond à ces filtres.</div>
     </div>
+    <div class="alert alert-danger" id="statErreur" hidden></div>
 
-    @* Répartitions : secteurs (anneau), catégories (camembert) et part des dossiers en cours (jauge) *@
-    <div class="row g-4 mb-4">
-        <div class="col-lg-4">
-            <div class="card shadow-sm card-mh h-100">
-                <div class="card-header h6 mb-0">Par secteur</div>
-                <div class="card-body d-flex align-items-center justify-content-center"><div id="grapheSecteurs" class="w-100"></div></div>
-            </div>
+    <div id="statContenu">
+        @* Chiffres clés *@
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-lg-3"><div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre" id="kpiTotal"></div><div class="stat-libelle" id="kpiTotalLibelle">Dossiers</div>
+            </div></div></div>
+            <div class="col-6 col-lg-3"><div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre" id="kpiCout"></div><div class="stat-libelle">Coût total</div>
+            </div></div></div>
+            <div class="col-6 col-lg-3"><div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre" id="kpiCoutMoyen"></div><div class="stat-libelle">Coût moyen par dossier</div>
+            </div></div></div>
+            <div class="col-6 col-lg-3"><div class="card shadow-sm stat-carte h-100"><div class="card-body">
+                <div class="stat-chiffre" id="kpiDetails"></div><div class="stat-libelle">Nuisances signalées</div>
+            </div></div></div>
         </div>
-        <div class="col-lg-4">
-            <div class="card shadow-sm card-mh h-100">
-                <div class="card-header h6 mb-0">Par catégorie</div>
-                <div class="card-body d-flex align-items-center justify-content-center"><div id="grapheCategories" class="w-100"></div></div>
+
+        @* Évolution : dossiers ou coûts, comparés à l'année précédente quand une année est choisie *@
+        <div class="card shadow-sm card-mh mb-4">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span class="h6 mb-0" id="titreEvolution">Évolution</span>
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                    <div class="stat-legende-courbe" id="legendeEvolution"></div>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Valeur affichée">
+                        <button type="button" class="btn btn-outline-mh active" data-mode="dossiers">Dossiers</button>
+                        <button type="button" class="btn btn-outline-mh" data-mode="cout">Coût</button>
+                    </div>
+                </div>
             </div>
+            <div class="card-body"><div id="grapheEvolution"></div></div>
         </div>
-        <div class="col-lg-4">
-            <div class="card shadow-sm card-mh h-100">
-                <div class="card-header h6 mb-0">Avancement</div>
-                <div class="card-body d-flex align-items-center justify-content-center"><div id="grapheEnCours" class="w-100"></div></div>
-            </div>
-        </div>
+
+        @* Répartitions et classements : les cartes sont créées par le script, dans une grille qui se réorganise selon la largeur de l'écran.
+           Un graphique que les filtres rendent sans intérêt (ex. les cités quand une cité est choisie) est remplacé par une autre statistique. *@
+        <div class="stat-cartes mb-4" id="statCartes"></div>
     </div>
+</div>
 
-    @* Cités les plus touchées (carte proportionnelle) et nuisances les plus fréquentes (radar) *@
-    <div class="row g-4 mb-4">
-        <div class="col-lg-7">
-            <div class="card shadow-sm card-mh h-100">
-                <div class="card-header h6 mb-0">Cités les plus touchées</div>
-                <div class="card-body"><div id="grapheCites"></div></div>
-            </div>
-        </div>
-        <div class="col-lg-5">
-            <div class="card shadow-sm card-mh h-100">
-                <div class="card-header h6 mb-0">Nuisances les plus fréquentes</div>
-                <div class="card-body d-flex align-items-center"><div id="grapheNuisances" class="w-100"></div></div>
-            </div>
-        </div>
-    </div>
+@* Info-bulle partagée par tous les graphiques *@
+<div id="statBulle" class="stat-bulle" role="tooltip"></div>
 
-    @* Info-bulle partagée par tous les graphiques *@
-    <div id="statBulle" class="stat-bulle" role="tooltip"></div>
-
-    @* Données lues par le script qui dessine les graphiques *@
-    <script type="application/json" id="donneesStats">@Html.Raw(Json.Serialize(new
-    {
-        total = Model.Total,
-        enCours = Model.EnCours,
-        evolution = Model.Evolution,
-        evolutionPrecedente = Model.EvolutionPrecedente,
-        secteurs = Model.Secteurs,
-        categories = Model.Categories,
-        cites = Model.Cites,
-        nuisances = Model.Nuisances
-    }))</script>
-}
+@* Données de départ lues par le script : filtres, chiffres, valeurs des listes *@
+<script type="application/json" id="donneesStats">@Html.Raw(Json.Serialize(new { filtres = Model.Filtres, resultat = Model.Resultat, options = Model.Options }))</script>
 
 @section Scripts {
     <script src="~/js/statistiques.js" asp-append-version="true"></script>

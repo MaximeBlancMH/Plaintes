@@ -11,6 +11,7 @@ namespace Plaintes.Tests
         {
             public Task<Dictionary<string, string>> getValuesForPlainteFile(Plainte plainte) => Task.FromResult(new Dictionary<string, string>());
             public Task<byte[]> createPlainteFile(Dictionary<string, string> valeurs) => Task.FromResult(new byte[] { 1 });
+            public Task<DossiersExport> GetPlaintesPourExport(PlainteFiltres filtres, string tri, string sens) => throw new NotImplementedException();
             public Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize) => throw new NotImplementedException();
             public Task<bool> createPlainte(CreatePlainteViewModel model, string userEmail) => throw new NotImplementedException();
             public Task<bool> updatePlainte(CreatePlainteViewModel model) => throw new NotImplementedException();

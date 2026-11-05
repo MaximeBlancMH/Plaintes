@@ -20,7 +20,7 @@ namespace Plaintes.Services
         /// </summary>
         /// <param name="utilisateur">Utilisateur en question</param>
         /// <returns>Un booléen qui répond à la question</returns>
-        public static bool EstActif(Utilisateur? utilisateur) => utilisateur is not null && utilisateur.DateFinu is null;
+        public static bool EstActif(Utilisateur? utilisateur) => utilisateur is not null && (utilisateur.DateFinu is null || utilisateur.DateFinu >= DateOnly.FromDateTime(DateTime.Now.Date));
 
         /// <summary>
         /// Une fonction qui vérifie si l'utilisateur porte le claim Refuse (Si oui, il est interdit d'accès)
@@ -45,8 +45,8 @@ namespace Plaintes.Services
 
         /// <summary>
         /// Fonction qui lit l'état d'une session ouverte (cookie) dans la base. Si l'utilisateur a été supprimé ou n'existe plus, la session
-        /// n'est plus valable : l'application la rejette et supprime le cookie. Sinon, le droit actuel est renvoyé pour mettre le cookie à jour
-        /// (voir Program.cs). Un compte déjà refusé n'a rien à vérifier : il n'a accès à aucune page protégée.
+        /// n'est plus valable : l'application la rejette et supprime le cookie. Sinon, le droit actuel est renvoyé pour mettre le cookie à jour.
+        /// Un compte déjà refusé n'a rien à vérifier : il n'a accès à aucune page protégée.
         /// </summary>
         /// <param name="utilisateur">Utilisateur de la session</param>
         /// <param name="db">Base de données</param>
@@ -58,7 +58,7 @@ namespace Plaintes.Services
             var email = utilisateur.FindFirst(ClaimTypes.Email)?.Value;
             if (string.IsNullOrWhiteSpace(email)) return new EtatSession(false, null);
 
-            var cle = "session:" + email.ToLowerInvariant();
+            var cle = CleSession(email);
             if (cache.TryGetValue(cle, out EtatSession? etat) && etat is not null) return etat;
 
             var user = await db.Utilisateurs.AsNoTracking().FirstOrDefaultAsync(u => u.UserEmail == email);
@@ -66,6 +66,20 @@ namespace Plaintes.Services
             cache.Set(cle, etat, DureeVerificationSession);
             return etat;
         }
+
+        /// <summary>
+        /// Fonction qui oublie l'état gardé en mémoire pour cet utilisateur : la requête suivante relira son droit en base.
+        /// À appeler après chaque ajout, modification ou suppression d'un utilisateur, sinon le changement ne se voit qu'au bout de
+        /// <see cref="DureeVerificationSession"/> (ex. les boutons de la page des utilisateurs calculés avec l'ancien droit).
+        /// </summary>
+        /// <param name="cache">Mémoire des états de session</param>
+        /// <param name="email">Adresse de l'utilisateur concerné</param>
+        public static void OublierSession(IMemoryCache cache, string? email)
+        {
+            if (!string.IsNullOrWhiteSpace(email)) cache.Remove(CleSession(email));
+        }
+
+        private static string CleSession(string email) => "session:" + email.Trim().ToLowerInvariant();
 
         /// <summary>
         /// Fonction qui indique si une session ouverte peut continuer (voir <see cref="EtatSessionAsync"/>)

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Plaintes.Controllers;
@@ -16,11 +17,16 @@ namespace Plaintes.Tests
 {
     public class AccountControllerTests
     {
-        internal static AccountController CreerController(IUtilisateurSrv? utilisateurs = null)
+        /// <summary>Contrôleur de test. L'utilisateur connecté a le droit donné (S par défaut, null = aucun droit).</summary>
+        internal static AccountController CreerController(IUtilisateurSrv? utilisateurs = null, string? droit = "S", IMemoryCache? cache = null)
         {
             var httpContext = new DefaultHttpContext();
+            if (droit != null)
+                httpContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                    new[] { new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, droit) }, "test"));
             var actionContext = new ActionContext(httpContext, new RouteData(), new ControllerActionDescriptor());
-            return new AccountController(new ConfigurationBuilder().Build(), NullLogger<AccountController>.Instance, utilisateurs ?? new FauxUtilisateurSrv())
+            return new AccountController(new ConfigurationBuilder().Build(), NullLogger<AccountController>.Instance, utilisateurs ?? new FauxUtilisateurSrv(),
+                cache ?? new MemoryCache(new MemoryCacheOptions()))
             {
                 ControllerContext = new ControllerContext(actionContext),
                 Url = new UrlHelper(actionContext),
@@ -82,8 +88,10 @@ namespace Plaintes.Tests
             public Task<List<Utilisateur>> GetAllUsers() => Task.FromResult(Utilisateurs);
             public Task<Utilisateur?> GetUserById(int idUser) => Task.FromResult(Utilisateurs.FirstOrDefault(u => u.IdUser == idUser));
             public Task DeleteUser(int idUser) { Suppressions.Add(idUser); return Task.CompletedTask; }
-            public Task AddUser(string email, string role) { Ajouts.Add((email, role)); return Task.CompletedTask; }
-            public Task UpdateUser(int idUser, string? newName, string newEmail, string newRole) { Modifications.Add((idUser, newName, newEmail, newRole)); return Task.CompletedTask; }
+            public List<DateOnly?> DatesFinAjout { get; } = new();
+            public List<DateOnly?> DatesFinModification { get; } = new();
+            public Task AddUser(string email, string role, DateOnly? dateFin = null) { Ajouts.Add((email, role)); DatesFinAjout.Add(dateFin); return Task.CompletedTask; }
+            public Task UpdateUser(int idUser, string? newName, string newEmail, string newRole, DateOnly? newDateFin) { Modifications.Add((idUser, newName, newEmail, newRole)); DatesFinModification.Add(newDateFin); return Task.CompletedTask; }
         }
 
         [Fact]
@@ -228,11 +236,15 @@ namespace Plaintes.Tests
             Assert.Contains("existe déjà", Erreur(c));
         }
 
-        private static AccountController CreerControllerConnecte(string email, FauxUtilisateurSrv srv)
+        private static AccountController CreerControllerConnecte(string email, FauxUtilisateurSrv srv, string droit = "S")
         {
             var c = CreerController(srv);
             c.ControllerContext.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(
-                new System.Security.Claims.ClaimsIdentity(new[] { new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, email) }, "test"));
+                new System.Security.Claims.ClaimsIdentity(new[]
+                {
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, email),
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, droit)
+                }, "test"));
             return c;
         }
 
@@ -393,6 +405,341 @@ namespace Plaintes.Tests
             Assert.Empty(srv.Modifications);
         }
 
+        // ---------- Hiérarchie des droits : on ne gère pas plus haut que soi ----------
+
+        [Theory]
+        [InlineData("A", "R")]
+        [InlineData("A", "W")]
+        [InlineData("A", "A")]      // le même niveau est accepté
+        [InlineData("S", "S")]
+        public async Task AddAccount_DroitInferieurOuEgalAuSien_EstAccepte(string monDroit, string role)
+        {
+            var srv = new FauxUtilisateurSrv();
+            var c = CreerController(srv, monDroit);
+
+            await c.AddAccount("nouveau@test.fr", role);
+
+            Assert.Equal(("nouveau@test.fr", role), Assert.Single(srv.Ajouts));
+            Assert.Null(Erreur(c));
+        }
+
+        [Theory]
+        [InlineData("A", "S")]
+        [InlineData("W", "A")]
+        [InlineData("R", "W")]
+        public async Task AddAccount_DroitSuperieurAuSien_EstRefuse_AvecUneErreur(string monDroit, string role)
+        {
+            var srv = new FauxUtilisateurSrv();
+            var c = CreerController(srv, monDroit);
+
+            var result = Assert.IsType<RedirectToActionResult>(await c.AddAccount("nouveau@test.fr", role));
+
+            Assert.Equal("AllAccounts", result.ActionName);
+            Assert.Empty(srv.Ajouts);
+            Assert.Equal("Vous ne pouvez pas créer un utilisateur avec un rôle supérieur au vôtre.", Erreur(c));
+        }
+
+        [Theory]
+        [InlineData(null)]          // pas de droit dans le cookie
+        [InlineData("X")]           // droit inconnu
+        public async Task AddAccount_SansDroitConnu_RienNEstAccepte(string? monDroit)
+        {
+            var srv = new FauxUtilisateurSrv();
+
+            await CreerController(srv, monDroit).AddAccount("nouveau@test.fr", "R");
+
+            Assert.Empty(srv.Ajouts);
+        }
+
+        [Fact]
+        public async Task AddAccount_DroitDuCookieMalFormate_EstNormalise()
+        {
+            var srv = new FauxUtilisateurSrv();
+
+            await CreerController(srv, " a ").AddAccount("nouveau@test.fr", "W");
+
+            Assert.Single(srv.Ajouts);
+        }
+
+        [Fact]
+        public async Task EditAccount_UtilisateurAuDroitSuperieur_EstRefuse_AvecUneErreur()
+        {
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, UserEmail = "chef@test.fr", Access = "S" } } };
+            var c = CreerController(srv, "A");
+
+            await c.EditAccount(1, "Chef", "chef@test.fr", "R");
+
+            Assert.Empty(srv.Modifications);
+            Assert.Equal("Vous ne pouvez pas modifier un utilisateur dont le rôle est supérieur au vôtre.", Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_DonnerUnDroitSuperieurAuSien_EstRefuse_AvecUneErreur()
+        {
+            var srv = DeuxUtilisateurs();
+            var c = CreerController(srv, "A");
+
+            await c.EditAccount(1, "Un", "un@test.fr", "S");
+
+            Assert.Empty(srv.Modifications);
+            Assert.Equal("Vous ne pouvez pas donner un rôle supérieur au vôtre.", Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_AdministrateurPeutPromouvoirJusquASonNiveau()
+        {
+            var srv = DeuxUtilisateurs();
+            var c = CreerController(srv, "A");
+
+            await c.EditAccount(1, "Un", "un@test.fr", "A");
+
+            Assert.Equal((1, "Un", "un@test.fr", "A"), Assert.Single(srv.Modifications));
+            Assert.Null(Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_DroitEnBaseMalFormate_EstComparéNormalisé()
+        {
+            // « s » en base est un super administrateur : un administrateur ne doit pas pouvoir le modifier
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, UserEmail = "chef@test.fr", Access = " s" } } };
+
+            await CreerController(srv, "A").EditAccount(1, "Chef", "chef@test.fr", "R");
+
+            Assert.Empty(srv.Modifications);
+        }
+
+        [Fact]
+        public async Task EditAccount_UtilisateurSansDroit_PeutEtreModifie()
+        {
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, UserEmail = "vide@test.fr", Access = null } } };
+
+            await CreerController(srv, "A").EditAccount(1, "", "vide@test.fr", "R");
+
+            Assert.Single(srv.Modifications);
+        }
+
+        // ---------- Son propre compte : seul un super administrateur change son e-mail et son rôle ----------
+
+        private static FauxUtilisateurSrv MonCompte(string droit) => new()
+        {
+            Utilisateurs = { new Utilisateur { IdUser = 1, NomUser = "Moi", UserEmail = "moi@test.fr", Access = droit } }
+        };
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_AdministrateurNePeutPasChangerSonEmail()
+        {
+            var srv = MonCompte("A");
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.EditAccount(1, "Moi", "nouveau@test.fr", "A");
+
+            Assert.Empty(srv.Modifications);
+            Assert.Equal("Seul un super administrateur peut modifier son propre e-mail, son propre rôle ou sa propre date de fin.", Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_AdministrateurNePeutPasChangerSonRole()
+        {
+            var srv = MonCompte("A");
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.EditAccount(1, "Moi", "moi@test.fr", "R");
+
+            Assert.Empty(srv.Modifications);
+            Assert.Equal("Seul un super administrateur peut modifier son propre e-mail, son propre rôle ou sa propre date de fin.", Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_AdministrateurPeutChangerSonNom()
+        {
+            var srv = MonCompte("A");
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.EditAccount(1, "Nouveau nom", "MOI@test.fr", "A");     // même e-mail, à la casse près
+
+            Assert.Equal((1, "Nouveau nom", "MOI@test.fr", "A"), Assert.Single(srv.Modifications));
+            Assert.Null(Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_SuperAdministrateurPeutToutChanger()
+        {
+            var srv = MonCompte("S");
+            var c = CreerControllerConnecte("moi@test.fr", srv, "S");
+
+            await c.EditAccount(1, "Moi", "nouveau@test.fr", "A");
+
+            Assert.Equal((1, "Moi", "nouveau@test.fr", "A"), Assert.Single(srv.Modifications));
+            Assert.Null(Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_AdministrateurNePeutPasChangerSaDateDeFin()
+        {
+            var srv = MonCompte("A");
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.EditAccount(1, "Moi", "moi@test.fr", "A", DateOnly.FromDateTime(DateTime.Today.AddYears(1)));
+
+            Assert.Empty(srv.Modifications);
+            Assert.Equal("Seul un super administrateur peut modifier son propre e-mail, son propre rôle ou sa propre date de fin.", Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_AdministrateurGardantSaDateDeFin_EstAccepte()
+        {
+            var fin = DateOnly.FromDateTime(DateTime.Today.AddMonths(6));
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, NomUser = "Moi", UserEmail = "moi@test.fr", Access = "A", DateFinu = fin } } };
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.EditAccount(1, "Nouveau nom", "moi@test.fr", "A", fin);
+
+            Assert.Single(srv.Modifications);
+            Assert.Equal(fin, Assert.Single(srv.DatesFinModification));
+        }
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_SuperAdministrateurPeutChangerSaDateDeFin()
+        {
+            var fin = DateOnly.FromDateTime(DateTime.Today.AddYears(1));
+            var srv = MonCompte("S");
+            var c = CreerControllerConnecte("moi@test.fr", srv, "S");
+
+            await c.EditAccount(1, "Moi", "moi@test.fr", "S", fin);
+
+            Assert.Equal(fin, Assert.Single(srv.DatesFinModification));
+            Assert.Null(Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_SonPropreCompte_SuperAdministrateurPeutMettreUneDateDeFinPassee()
+        {
+            // Le super administrateur peut tout faire sur son compte, même se retirer l'accès
+            var hier = DateOnly.FromDateTime(DateTime.Today.AddDays(-1));
+            var srv = MonCompte("S");
+            var c = CreerControllerConnecte("moi@test.fr", srv, "S");
+
+            await c.EditAccount(1, "Moi", "moi@test.fr", "S", hier);
+
+            Assert.Equal(hier, Assert.Single(srv.DatesFinModification));
+            Assert.Null(Erreur(c));
+        }
+
+        [Fact]
+        public async Task EditAccount_AutreCompte_DateDeFinEstTransmise_MemePassee()
+        {
+            var fin = DateOnly.FromDateTime(DateTime.Today.AddDays(-1));
+            var srv = DeuxUtilisateurs();
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.EditAccount(1, "Un", "un@test.fr", "R", fin);
+
+            Assert.Equal(fin, Assert.Single(srv.DatesFinModification));
+        }
+
+        [Fact]
+        public async Task EditAccount_DateDeFinVide_EstTransmiseVide()
+        {
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 1, UserEmail = "un@test.fr", Access = "R", DateFinu = new DateOnly(2030, 1, 1) } } };
+
+            await CreerController(srv).EditAccount(1, "", "un@test.fr", "R", null);
+
+            Assert.Null(Assert.Single(srv.DatesFinModification));
+        }
+
+        [Fact]
+        public async Task AddAccount_DateDeFinEstTransmise()
+        {
+            var fin = new DateOnly(2030, 6, 30);
+            var srv = new FauxUtilisateurSrv();
+
+            await CreerController(srv).AddAccount("nouveau@test.fr", "R", fin);
+
+            Assert.Equal(fin, Assert.Single(srv.DatesFinAjout));
+        }
+
+        [Fact]
+        public async Task EditAccount_AutreCompte_AdministrateurPeutChangerEmailEtRole()
+        {
+            var srv = DeuxUtilisateurs();
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.EditAccount(1, "Un", "nouveau@test.fr", "W");
+
+            Assert.Equal((1, "Un", "nouveau@test.fr", "W"), Assert.Single(srv.Modifications));
+        }
+
+        [Fact]
+        public async Task DeleteAccount_UtilisateurAuDroitSuperieur_EstRefuse_AvecUneErreur()
+        {
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 2, UserEmail = "chef@test.fr", Access = "S" } } };
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.DeleteAccount(2);
+
+            Assert.Empty(srv.Suppressions);
+            Assert.Equal("Vous ne pouvez pas supprimer un utilisateur dont le rôle est supérieur au vôtre.", Erreur(c));
+        }
+
+        [Theory]
+        [InlineData("W")]
+        [InlineData("A")]
+        public async Task DeleteAccount_DroitInferieurOuEgal_EstSupprime(string droitCible)
+        {
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 2, UserEmail = "autre@test.fr", Access = droitCible } } };
+            var c = CreerControllerConnecte("moi@test.fr", srv, "A");
+
+            await c.DeleteAccount(2);
+
+            Assert.Equal(new[] { 2 }, srv.Suppressions);
+            Assert.Null(Erreur(c));
+        }
+
+        // ---------- Mémoire des sessions : un changement s'applique dès la page suivante ----------
+
+        [Fact]
+        public async Task EditAccount_OublieLEtatEnMemoire_DeLAncienneEtDeLaNouvelleAdresse()
+        {
+            var cache = new MemoryCache(new MemoryCacheOptions());
+            cache.Set("session:un@test.fr", "ancien état");
+            cache.Set("session:nouveau@test.fr", "ancien état");
+            var srv = DeuxUtilisateurs();
+
+            await CreerController(srv, "S", cache).EditAccount(1, "Un", "nouveau@test.fr", "A");
+
+            Assert.False(cache.TryGetValue("session:un@test.fr", out _));
+            Assert.False(cache.TryGetValue("session:nouveau@test.fr", out _));
+        }
+
+        [Fact]
+        public async Task DeleteAccount_OublieLEtatEnMemoire_PourCouperLaSessionTouteDeSuite()
+        {
+            var cache = new MemoryCache(new MemoryCacheOptions());
+            cache.Set("session:autre@test.fr", "ancien état");
+            var srv = new FauxUtilisateurSrv { Utilisateurs = { new Utilisateur { IdUser = 2, UserEmail = "autre@test.fr", Access = "R" } } };
+            var c = CreerController(srv, "S", cache);
+            c.ControllerContext.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, "moi@test.fr"),
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "S")
+            }, "test"));
+
+            await c.DeleteAccount(2);
+
+            Assert.False(cache.TryGetValue("session:autre@test.fr", out _));
+        }
+
+        [Fact]
+        public async Task AddAccount_OublieLEtatEnMemoireDeLaNouvelleAdresse()
+        {
+            var cache = new MemoryCache(new MemoryCacheOptions());
+            cache.Set("session:nouveau@test.fr", "ancien état");
+
+            await CreerController(new FauxUtilisateurSrv(), "S", cache).AddAccount("nouveau@test.fr", "R");
+
+            Assert.False(cache.TryGetValue("session:nouveau@test.fr", out _));
+        }
+
         // ---------- Page « accès refusé » ----------
 
         [Fact]
@@ -457,7 +804,7 @@ namespace Plaintes.Tests
         {
             var noms = typeof(AccountController).GetMethod(nameof(AccountController.AddAccount))!.GetParameters().Select(p => p.Name);
 
-            Assert.Equal(new[] { "email", "role" }, noms);
+            Assert.Equal(new[] { "email", "role", "dateFin" }, noms);
         }
 
         [Fact]
@@ -467,7 +814,7 @@ namespace Plaintes.Tests
             // avec d'autres noms, le formulaire arriverait vide et effacerait l'utilisateur.
             var noms = typeof(AccountController).GetMethod(nameof(AccountController.EditAccount))!.GetParameters().Select(p => p.Name);
 
-            Assert.Equal(new[] { "id", "name", "email", "role" }, noms);
+            Assert.Equal(new[] { "id", "name", "email", "role", "dateFin" }, noms);
         }
     }
 }

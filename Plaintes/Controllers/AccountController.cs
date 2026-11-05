@@ -2,7 +2,9 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Plaintes.Models;
+using Plaintes.Services;
 using Plaintes.Services.IServices;
 using Sustainsys.Saml2.AspNetCore2;
 using System.Security.Claims;
@@ -15,12 +17,27 @@ namespace Plaintes.Controllers
         private readonly IConfiguration _config;
         private readonly ILogger<AccountController> _logger;
         private readonly IUtilisateurSrv _utilisateurSrv;
+        private readonly IMemoryCache _cache;
+        private static readonly string[] Droits = { "R", "W", "A", "S" };
+        private string? MonDroit => User.FindFirst(ClaimTypes.Role)?.Value?.Trim().ToUpperInvariant();
 
-        public AccountController(IConfiguration config, ILogger<AccountController> logger, IUtilisateurSrv utilisateurSrv)
+        /// <summary>
+        /// Fonction qui indique si l'utilisateur connecté peut gérer ce droit : il ne doit pas dépasser le sien.
+        /// </summary>
+        /// <param name="droit">Droit à comparer</param>
+        private bool PeutGerer(string? droit)
+        {
+            var mien = Array.IndexOf(Droits, MonDroit);
+            var cible = string.IsNullOrWhiteSpace(droit) ? 0 : Array.IndexOf(Droits, droit.Trim().ToUpperInvariant());
+            return mien >= 0 && cible >= 0 && cible <= mien;
+        }
+
+        public AccountController(IConfiguration config, ILogger<AccountController> logger, IUtilisateurSrv utilisateurSrv, IMemoryCache cache)
         {
             _config = config;
             _logger = logger;
             _utilisateurSrv = utilisateurSrv;
+            _cache = cache;
         }
 
         /// <summary>
@@ -82,12 +99,18 @@ namespace Plaintes.Controllers
                 
             if(user.UserEmail == User.FindFirstValue(ClaimTypes.Email))
             {
-                // Les erreurs passent par TempData (ModelState ne survit pas à la redirection) ; la vue AllAccounts les affiche.
                 TempData["Erreur"] = "Vous ne pouvez pas supprimer votre propre compte.";
                 return RedirectToAction(nameof(AllAccounts));
             }
 
+            if (!PeutGerer(user.Access))
+            {
+                TempData["Erreur"] = "Vous ne pouvez pas supprimer un utilisateur dont le rôle est supérieur au vôtre.";
+                return RedirectToAction(nameof(AllAccounts));
+            }
+
             await _utilisateurSrv.DeleteUser(id);
+            ComptesClaims.OublierSession(_cache, user.UserEmail);      // sa session est coupée tout de suite, sans attendre
 
             return RedirectToAction(nameof(AllAccounts));
         }
@@ -97,11 +120,12 @@ namespace Plaintes.Controllers
         /// </summary>
         /// <param name="email">Email du nouvel utilisateur</param>
         /// <param name="role">Role du nouvel utilisateur</param>
+        /// <param name="dateFin">Date de fin d'accès, facultative (vide = sans limite)</param>
         /// <returns></returns>
         [HttpPost("AddAccount")]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "A,S")]
-        public async Task<IActionResult> AddAccount(string email, string role)
+        public async Task<IActionResult> AddAccount(string email, string role, DateOnly? dateFin = null)
         {
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(role))
             {
@@ -109,9 +133,15 @@ namespace Plaintes.Controllers
                 return RedirectToAction(nameof(AllAccounts));
             }
 
-            if (!new[] { "R", "W", "A", "S" }.Contains(role))
+            if (!Droits.Contains(role))
             {
                 TempData["Erreur"] = "Le rôle spécifié n'est pas valide.";
+                return RedirectToAction(nameof(AllAccounts));
+            }
+
+            if (!PeutGerer(role))
+            {
+                TempData["Erreur"] = "Vous ne pouvez pas créer un utilisateur avec un rôle supérieur au vôtre.";
                 return RedirectToAction(nameof(AllAccounts));
             }
 
@@ -123,7 +153,8 @@ namespace Plaintes.Controllers
                 return RedirectToAction(nameof(AllAccounts));
             }
 
-            await _utilisateurSrv.AddUser(email, role);
+            await _utilisateurSrv.AddUser(email, role, dateFin);
+            ComptesClaims.OublierSession(_cache, email);
             return RedirectToAction(nameof(AllAccounts));
         }
 
@@ -134,11 +165,12 @@ namespace Plaintes.Controllers
         /// <param name="name">Nouveau nom de l'utilisateur (facultatif)</param>
         /// <param name="email">Nouvel email de l'utilisateur</param>
         /// <param name="role">Nouveau rôle de l'utilisateur</param>
+        /// <param name="dateFin">Nouvelle date de fin d'accès (vide = sans limite)</param>
         /// <returns></returns>
         [HttpPost("EditAccount")]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "A,S")]
-        public async Task<IActionResult> EditAccount(int id, string name, string email, string role)
+        public async Task<IActionResult> EditAccount(int id, string name, string email, string role, DateOnly? dateFin = null)
         {
             var user = await _utilisateurSrv.GetUserById(id);
             if (user == null)
@@ -153,9 +185,33 @@ namespace Plaintes.Controllers
                 return RedirectToAction(nameof(AllAccounts));
             }
 
-            if (!new[] { "R", "W", "A", "S" }.Contains(role))
+            if (!Droits.Contains(role))
             {
                 TempData["Erreur"] = "Le rôle spécifié n'est pas valide.";
+                return RedirectToAction(nameof(AllAccounts));
+            }
+
+            // Sur son propre compte, seul un super administrateur peut changer son e-mail, son rôle ou sa date de fin (le nom reste modifiable)
+            var estMoi = !string.IsNullOrEmpty(user.UserEmail)
+                && string.Equals(user.UserEmail, User.FindFirstValue(ClaimTypes.Email), StringComparison.OrdinalIgnoreCase);
+            if (estMoi && MonDroit != "S"
+                && (!string.Equals(email.Trim(), user.UserEmail!.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || role != user.Access?.Trim().ToUpperInvariant()
+                    || dateFin != user.DateFinu))
+            {
+                TempData["Erreur"] = "Seul un super administrateur peut modifier son propre e-mail, son propre rôle ou sa propre date de fin.";
+                return RedirectToAction(nameof(AllAccounts));
+            }
+
+            // On ne modifie pas quelqu'un qui a plus de droits que soi, et on ne donne pas plus de droits que les siens
+            if (!PeutGerer(user.Access))
+            {
+                TempData["Erreur"] = "Vous ne pouvez pas modifier un utilisateur dont le rôle est supérieur au vôtre.";
+                return RedirectToAction(nameof(AllAccounts));
+            }
+            if (!PeutGerer(role))
+            {
+                TempData["Erreur"] = "Vous ne pouvez pas donner un rôle supérieur au vôtre.";
                 return RedirectToAction(nameof(AllAccounts));
             }
 
@@ -169,7 +225,10 @@ namespace Plaintes.Controllers
 
             // Nom laissé vide : on garde celui qui existe déjà (ou l'absence de nom, tant que l'utilisateur ne s'est pas connecté).
             var nom = string.IsNullOrWhiteSpace(name) ? user.NomUser : name.Trim();
-            await _utilisateurSrv.UpdateUser(id, nom, email, role);
+            await _utilisateurSrv.UpdateUser(id, nom, email, role, dateFin);
+            // Le nouveau droit s'applique dès la page suivante (y compris à soi-même : boutons, menus)
+            ComptesClaims.OublierSession(_cache, user.UserEmail);
+            ComptesClaims.OublierSession(_cache, email);
             return RedirectToAction(nameof(AllAccounts));
         }
 

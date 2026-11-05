@@ -92,6 +92,131 @@ namespace Plaintes.Services
         public async Task<PagedResult<Plainte>> getPlaintesWithFilters(PlainteFiltres filtres, string tri, string sens, int pageNumber, int pageSize)
         {
             PagedResult<Plainte> result = new PagedResult<Plainte>();
+            var query = FiltrerSansPeriode(filtres);
+
+            // Bornes du curseur de période, avant d'appliquer la période elle-même : elles se resserrent avec les autres filtres
+            result.PeriodeMin = await query.MinAsync(p => (DateOnly?)p.DateDeb);
+            result.PeriodeMax = await query.MaxAsync(p => (DateOnly?)p.DateDeb);
+            query = FiltrerPeriode(query, filtres);
+
+            if (pageNumber < 1) pageNumber = 1;
+
+            result.TotalCount = await query.CountAsync();
+            result.Page = pageNumber;
+            result.PageSize = pageSize;
+            result.CoutMax = await query.SelectMany(p => p.Composers).Where(c => !c.SupprDet).MaxAsync(c => (int?)c.Cout) ?? 0;
+
+            query = AppliquerTri(query, tri, sens);
+
+            result.Plaintes = await query
+                .AsSplitQuery()
+                .Include(p => p.IdUserNavigation)
+                .Include(p => p.NumCiteNavigation)
+                .Include(p => p.CodeRueNavigation)
+                .Include(p => p.CodePartieCommuneNavigation)
+                .Include(p => p.CodeCatNavigation)
+                .Include(p => p.Composers.Where(c => !c.SupprDet))
+                    .ThenInclude(c => c.CodeNuisanceNavigation)
+                        .ThenInclude(n => n.CodeSousCatNavigation)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+            return result;
+        }
+
+        /// <summary>
+        /// Fonction qui récupère, pour l'export Excel, toutes les plaintes qui répondent aux filtres de la page Dossiers, dans l'ordre du tri choisi
+        /// (sans pagination), avec le nombre de pièces jointes de chacune et le rappel des filtres
+        /// </summary>
+        /// <param name="filtres">Filtres de la page (les mêmes que l'affichage)</param>
+        /// <param name="tri">Colonne de tri</param>
+        /// <param name="sens">Sens du tri</param>
+        public async Task<DossiersExport> GetPlaintesPourExport(PlainteFiltres filtres, string tri, string sens)
+        {
+            var query = FiltrerPeriode(FiltrerSansPeriode(filtres), filtres);
+
+            var plaintes = await AppliquerTri(query, tri, sens)
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(p => p.IdUserNavigation)
+                .Include(p => p.NumCiteNavigation)
+                .Include(p => p.CodeRueNavigation)
+                .Include(p => p.CodePartieCommuneNavigation)
+                .Include(p => p.CodeCatNavigation)
+                .Include(p => p.CodeFaitNavigation)
+                .Include(p => p.CodEtatNavigation)
+                .Include(p => p.Composers.Where(c => !c.SupprDet))
+                    .ThenInclude(c => c.CodeNuisanceNavigation)
+                        .ThenInclude(n => n.CodeSousCatNavigation)
+                .ToListAsync();
+
+            // Nombre de pièces jointes (sans charger les pièces elles-mêmes)
+            var nbPieces = await query
+                .Select(p => new { p.NumPlainte, N = p.PieceJointes.Count(pj => !pj.SupprPj) })
+                .ToDictionaryAsync(x => x.NumPlainte, x => x.N);
+
+            return new DossiersExport(plaintes, nbPieces, await DecrireFiltres(filtres, tri, sens));
+        }
+
+        /// <summary>
+        /// Fonction qui rappelle en clair les filtres et le tri choisis (libellés des listes plutôt que leurs codes), pour l'export Excel
+        /// </summary>
+        private async Task<List<FiltreExport>> DecrireFiltres(PlainteFiltres f, string tri, string sens)
+        {
+            var liste = new List<FiltreExport>();
+            void Ajouter(string libelle, string? valeur)
+            {
+                if (!string.IsNullOrWhiteSpace(valeur)) liste.Add(new FiltreExport(libelle, valeur.Trim()));
+            }
+
+            Ajouter("N° de dossier", f.numPlainte?.ToString());
+            Ajouter("Cité (contient)", f.cite);
+            Ajouter("Rue (contient)", f.rue);
+            Ajouter("Partie commune (contient)", f.partieCommune);
+            Ajouter("N° de réclamation (contient)", f.reclamation);
+            Ajouter("Commentaire (contient)", f.commentaire);
+            if (!string.IsNullOrEmpty(f.categorie))
+                Ajouter("Catégorie", (await _context.Categories.FindAsync(f.categorie))?.LibCat ?? f.categorie);
+            if (!string.IsNullOrEmpty(f.sousCategorie))
+                Ajouter("Sous-catégorie", (await _context.SousCategories.FindAsync(f.sousCategorie))?.LibSousCat ?? f.sousCategorie);
+            if (!string.IsNullOrEmpty(f.nuisance))
+                Ajouter("Nuisance", (await _context.Nuisances.FindAsync(f.nuisance))?.LibNuisance ?? f.nuisance);
+            Ajouter("Coût d'un détail, au moins", f.coutMin.HasValue ? f.coutMin + " €" : null);
+            Ajouter("Coût d'un détail, au plus", f.coutMax.HasValue ? f.coutMax + " €" : null);
+            Ajouter("Début des faits, à partir de", LibelleMois(f.debut));
+            Ajouter("Début des faits, jusqu'à", LibelleMois(f.fin));
+            if (!string.IsNullOrEmpty(tri))
+                Ajouter("Tri", (ColonnesTri.TryGetValue(tri.ToLowerInvariant(), out var colonne) ? colonne : tri)
+                    + (sens == "asc" ? " (croissant)" : " (décroissant)"));
+            return liste;
+        }
+
+        // Libellés des colonnes de tri (voir AppliquerTri)
+        private static readonly Dictionary<string, string> ColonnesTri = new()
+        {
+            ["numplainte"] = "N° de dossier", ["cite"] = "Cité", ["rue"] = "Rue", ["partiecommune"] = "Partie commune",
+            ["reclamation"] = "N° de réclamation", ["cout"] = "Coût", ["categorie"] = "Catégorie",
+            ["datecreation"] = "Date de saisie", ["datedeb"] = "Début des faits"
+        };
+
+        /// <summary>
+        /// Fonction qui écrit un mois « aaaa-mm » en clair (« janv. 2026 ») ; null si la valeur est vide ou invalide
+        /// </summary>
+        private static string? LibelleMois(string? mois) =>
+            LireMois(mois) is DateOnly d ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR")) : null;
+
+        /// <summary>
+        /// Fonction qui lit un mois « aaaa-mm » ; renvoie le premier jour du mois, ou null si la valeur est vide ou invalide
+        /// </summary>
+        private static DateOnly? LireMois(string? mois) =>
+            DateOnly.TryParseExact(mois + "-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+
+        /// <summary>
+        /// Fonction qui applique tous les filtres de la page Dossiers sauf la période (plaintes non supprimées)
+        /// </summary>
+        private IQueryable<Plainte> FiltrerSansPeriode(PlainteFiltres filtres)
+        {
             var query = _context.Plaintes.Where(p => !p.Suppr);
             if (filtres.numPlainte.HasValue)
             {
@@ -113,6 +238,10 @@ namespace Plaintes.Services
             {
                 query = query.Where(p => p.NumReclamation.Contains(filtres.reclamation));
             }
+            if (!string.IsNullOrEmpty(filtres.commentaire))
+            {
+                query = query.Where(p => p.Commentaire != null && p.Commentaire.Contains(filtres.commentaire));
+            }
             if (!string.IsNullOrEmpty(filtres.categorie))
             {
                 query = query.Where(p => p.CodeCat == filtres.categorie);
@@ -133,29 +262,24 @@ namespace Plaintes.Services
             {
                 query = query.Where(p => p.Composers.Where(c => !c.SupprDet).Any(c => c.Cout <= filtres.coutMax.Value));
             }
+            return query;
+        }
 
-            if (pageNumber < 1) pageNumber = 1;
-
-            result.TotalCount = await query.CountAsync();
-            result.Page = pageNumber;
-            result.PageSize = pageSize;
-
-            query = AppliquerTri(query, tri, sens);
-
-            result.Plaintes = await query
-                .AsSplitQuery()
-                .Include(p => p.IdUserNavigation)
-                .Include(p => p.NumCiteNavigation)
-                .Include(p => p.CodeRueNavigation)
-                .Include(p => p.CodePartieCommuneNavigation)
-                .Include(p => p.CodeCatNavigation)
-                .Include(p => p.Composers.Where(c => !c.SupprDet))
-                    .ThenInclude(c => c.CodeNuisanceNavigation)
-                        .ThenInclude(n => n.CodeSousCatNavigation)
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-            return result;
+        /// <summary>
+        /// Fonction qui garde les plaintes dont la date de début des faits est dans la période choisie (premier et dernier mois inclus)
+        /// </summary>
+        private static IQueryable<Plainte> FiltrerPeriode(IQueryable<Plainte> query, PlainteFiltres filtres)
+        {
+            if (LireMois(filtres.debut) is DateOnly premierJour)
+            {
+                query = query.Where(p => p.DateDeb >= premierJour);
+            }
+            if (LireMois(filtres.fin) is DateOnly debutDernierMois)
+            {
+                var dernierJour = debutDernierMois.AddMonths(1).AddDays(-1);
+                query = query.Where(p => p.DateDeb <= dernierJour);
+            }
+            return query;
         }
 
         /// <summary>

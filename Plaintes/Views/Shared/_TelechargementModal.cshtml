@@ -1,0 +1,101 @@
+@* ============================================================================
+   Modal de téléchargement d'un PDF, réutilisable.
+   Usage : <partial name="_TelechargementModal" /> dans la vue, puis, sur chaque lien de téléchargement :
+     data-action="telecharger"  href="/Dossiers/123/download-pdf"  data-nom="plainte-123.pdf"
+   Le modal ne se ferme pas tant que le fichier n'est pas prêt : on ne peut pas cliquer ailleurs pendant la génération.
+   ============================================================================ *@
+@* data-bs-backdrop="static" et data-bs-keyboard="false" : un clic à côté ou la touche Échap ne ferment pas le modal *@
+<div class="modal fade" id="telechargementModal" tabindex="-1" aria-labelledby="telechargementLabel" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header modal-header-mh">
+                <h5 class="modal-title" id="telechargementLabel">Génération du PDF</h5>
+            </div>
+            <div class="modal-body text-center py-4">
+                @* État « en cours » *@
+                <div id="telechargementEnCours">
+                    @* Animation : un document dont les lignes s'écrivent les unes après les autres (styles .doc-anim dans site.css) *@
+                    <div class="doc-anim mb-3" role="status" aria-hidden="true">
+                        <span class="doc-anim-titre"></span>
+                        <span class="doc-anim-ligne"></span>
+                        <span class="doc-anim-ligne"></span>
+                        <span class="doc-anim-ligne"></span>
+                        <span class="doc-anim-ligne"></span>
+                        <span class="doc-anim-ligne"></span>
+                        <span class="doc-anim-ligne"></span>
+                    </div>
+                    <p class="mb-1 fw-semibold">Le téléchargement est en cours.</p>
+                    <p class="mb-0 text-muted">Merci de patienter et de ne pas quitter la page.</p>
+                </div>
+                @* État « erreur », affiché à la place si la génération échoue *@
+                <div id="telechargementErreur" hidden>
+                    <p class="mb-1 fw-semibold text-danger">Le téléchargement a échoué.</p>
+                    <p class="mb-0 text-muted">Rechargez la page puis réessayez. Si le problème persiste, contactez un administrateur.</p>
+                </div>
+            </div>
+            <div class="modal-footer" id="telechargementPied" hidden>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const modalEl = document.getElementById('telechargementModal');
+        const enCoursEl = document.getElementById('telechargementEnCours');
+        const erreurEl = document.getElementById('telechargementErreur');
+        const piedEl = document.getElementById('telechargementPied');
+        let enCours = false;     // un seul téléchargement à la fois
+
+        // Affiche l'état « en cours » ou l'état « erreur » dans le modal
+        function afficher(erreur) {
+            enCoursEl.hidden = erreur;
+            erreurEl.hidden = !erreur;
+            piedEl.hidden = !erreur;
+        }
+
+        // On écoute les clics sur tout le document, comme pour le modal de suppression.
+        document.addEventListener('click', async function (e) {
+            const lien = e.target.closest('[data-action="telecharger"]');
+            if (!lien) return;
+
+            // On remplace la navigation du lien par un appel qui laisse la page en place
+            e.preventDefault();
+            if (enCours) return;
+            enCours = true;
+
+            afficher(false);
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            // Bootstrap ignore hide() tant que l'ouverture n'est pas terminée : on attend qu'elle le soit
+            const ouvert = new Promise(function (resolve) { modalEl.addEventListener('shown.bs.modal', resolve, { once: true }); });
+            modal.show();
+
+            try {
+                const reponse = await fetch(lien.href, { credentials: 'same-origin' });
+                // Session expirée : la réponse est une redirection vers la connexion Microsoft, pas un PDF
+                if (!reponse.ok || reponse.redirected) throw new Error('Téléchargement impossible (' + reponse.status + ')');
+
+                // On donne le fichier reçu au navigateur comme un téléchargement ordinaire
+                const blob = await reponse.blob();
+                const adresse = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = adresse;
+                a.download = lien.dataset.nom || 'plainte.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(function () { URL.revokeObjectURL(adresse); }, 10000);
+
+                await ouvert;
+                modal.hide();
+            } catch (err) {
+                await ouvert;
+                afficher(true);      // le modal reste ouvert avec le message et le bouton « Fermer »
+            } finally {
+                enCours = false;
+            }
+        });
+    })();
+</script>

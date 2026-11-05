@@ -110,7 +110,8 @@
             </div>
         </div>
     }
-    <div class="container">
+    @* Une page peut élargir son conteneur avec ViewData["ClasseConteneur"] (ex. la page Dossiers) *@
+    <div class="@(ViewData["ClasseConteneur"] as string ?? "container")">
         <main role="main" class="pb-3">
             @* Contenu de la page *@
             @RenderBody()

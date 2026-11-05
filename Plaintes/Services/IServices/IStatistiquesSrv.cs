@@ -4,6 +4,8 @@ namespace Plaintes.Services.IServices
 {
     public interface IStatistiquesSrv
     {
-        Task<StatistiquesViewModel> GetStatistiques(int? annee);
+        Task<StatistiquesResultat> GetStatistiques(StatistiquesFiltres filtres);
+        Task<StatistiquesOptions> GetOptions();
+        Task<List<FiltreExport>> DecrireFiltres(StatistiquesFiltres filtres);
     }
 }

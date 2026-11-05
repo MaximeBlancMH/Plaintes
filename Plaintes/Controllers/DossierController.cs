@@ -70,6 +70,25 @@ namespace Plaintes.Controllers
         }
 
         /// <summary>
+        /// Action qui télécharge en Excel toutes les plaintes qui répondent aux filtres de la page (sans pagination), dans l'ordre du tri choisi.
+        /// Elle reçoit les mêmes paramètres que la page : le bouton reprend simplement l'adresse de la page.
+        /// </summary>
+        /// <param name="filtres">Filtres sélectionnés sur la page</param>
+        /// <param name="tri">Colonne de tri</param>
+        /// <param name="sens">Sens du tri</param>
+        /// <param name="excel">Service qui fabrique le classeur</param>
+        [Authorize]
+        [HttpGet("Excel")]
+        public async Task<IActionResult> ExportExcel(PlainteFiltres filtres, string tri, string sens, [FromServices] IExportExcelSrv excel)
+        {
+            var export = await _plainteSrv.GetPlaintesPourExport(filtres, tri, sens);
+            // Les plaintes quittent l'application : on garde une trace de qui a exporté quoi
+            _logger.LogInformation("Export Excel de {Nombre} dossier(s) par {Utilisateur} (filtres : {Filtres})", export.Plaintes.Count,
+                User.Identity?.Name, export.Filtres.Count == 0 ? "aucun" : string.Join(" ; ", export.Filtres.Select(f => f.Libelle + " = " + f.Valeur)));
+            return File(excel.Dossiers(export), ExportExcelSrv.TypeMime, $"Dossiers_{DateTime.Now:yyyy-MM-dd}.xlsx");
+        }
+
+        /// <summary>
         /// Récupère les propositions possibles pour les listes déroulantes et affiche la page de création d'une plainte
         /// </summary>
         /// <returns></returns>

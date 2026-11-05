@@ -102,7 +102,7 @@ namespace Plaintes.Tests
                 new Utilisateur { IdUser = 2, NomUser = "Autre", UserEmail = "autre@test.fr", Access = "R" });
             using var _ = ctx;
 
-            await srv.UpdateUser(1, "Nouveau", "nouveau@test.fr", "A");
+            await srv.UpdateUser(1, "Nouveau", "nouveau@test.fr", "A", null);
 
             var modifie = (await ctx.Utilisateurs.FindAsync(1))!;
             Assert.Equal(("Nouveau", "nouveau@test.fr", "A"), (modifie.NomUser, modifie.UserEmail, modifie.Access));
@@ -116,10 +116,34 @@ namespace Plaintes.Tests
             var (ctx, srv) = await Creer(new Utilisateur { IdUser = 1, NomUser = "Ancien", UserEmail = "ancien@test.fr", Access = "R" });
             using var _ = ctx;
 
-            await srv.UpdateUser(999, "Nouveau", "nouveau@test.fr", "A");
+            await srv.UpdateUser(999, "Nouveau", "nouveau@test.fr", "A", null);
 
             Assert.Equal("Ancien", (await ctx.Utilisateurs.FindAsync(1))!.NomUser);
             Assert.Single(ctx.Utilisateurs);
+        }
+
+        [Fact]
+        public async Task UpdateUser_EnregistreOuEffaceLaDateDeFin()
+        {
+            var (ctx, srv) = await Creer(new Utilisateur { IdUser = 1, UserEmail = "un@test.fr", Access = "R" });
+            using var _ = ctx;
+
+            await srv.UpdateUser(1, null, "un@test.fr", "R", new DateOnly(2030, 1, 31));
+            Assert.Equal(new DateOnly(2030, 1, 31), (await ctx.Utilisateurs.FindAsync(1))!.DateFinu);
+
+            await srv.UpdateUser(1, null, "un@test.fr", "R", null);
+            Assert.Null((await ctx.Utilisateurs.FindAsync(1))!.DateFinu);
+        }
+
+        [Fact]
+        public async Task AddUser_EnregistreLaDateDeFin()
+        {
+            var (ctx, srv) = await Creer();
+            using var _ = ctx;
+
+            await srv.AddUser("dupont@test.fr", "W", new DateOnly(2030, 6, 30));
+
+            Assert.Equal(new DateOnly(2030, 6, 30), Assert.Single(ctx.Utilisateurs).DateFinu);
         }
 
         // ---------- DeleteUser ----------
